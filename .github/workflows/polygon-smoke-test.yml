@@ -1,6 +1,6 @@
 # =============================================================================
 # Polygon / Massive WebSocket smoke test.
-# Manual-trigger only. Uses POLY_API_KEY repo secret to verify the live WS
+# Manual-trigger only. Uses POLYGON_API_KEY repo secret to verify the live WS
 # subscription end-to-end without committing any service deploy.
 #
 # Trigger from the UI: Actions → polygon-smoke-test → Run workflow
@@ -11,6 +11,12 @@ name: polygon-smoke-test
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "GitHub Environment scope to read POLYGON_API_KEY from"
+        required: true
+        default: "dev"
+        type: choice
+        options: [dev, prod]
       ws_url:
         description: "WebSocket URL (legacy polygon.io endpoint or massive.com if rebranded)"
         required: true
@@ -33,6 +39,8 @@ permissions:
 jobs:
   smoke:
     name: ws-smoke
+    # Pin to the GitHub Environment so secrets.POLYGON_API_KEY resolves from env scope.
+    environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -45,13 +53,13 @@ jobs:
 
       - name: Connect, auth, subscribe, log first messages
         env:
-          POLY_API_KEY: ${{ secrets.POLY_API_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           WS_URL: ${{ inputs.ws_url }}
           TICKER: ${{ inputs.ticker }}
           DURATION_SEC: ${{ inputs.duration_sec }}
         run: |
-          if [ -z "$POLY_API_KEY" ]; then
-            echo "::error::POLY_API_KEY secret not set on repo or environment scope"
+          if [ -z "$POLYGON_API_KEY" ]; then
+            echo "::error::POLYGON_API_KEY secret not set on repo or environment scope"
             exit 1
           fi
           node <<'EOF'
@@ -83,7 +91,7 @@ jobs:
 
           ws.on('open', () => {
             console.log('  ✓ socket open');
-            ws.send(JSON.stringify({ action: 'auth', params: process.env.POLY_API_KEY }));
+            ws.send(JSON.stringify({ action: 'auth', params: process.env.POLYGON_API_KEY }));
             ws.send(JSON.stringify({ action: 'subscribe', params: `T.${ticker},Q.${ticker}` }));
           });
 
