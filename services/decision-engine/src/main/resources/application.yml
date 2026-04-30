@@ -1,0 +1,58 @@
+quarkus:
+  application:
+    name: decision-engine
+  http:
+    port: 8082
+  log:
+    level: INFO
+    category:
+      "com.levelsweep":
+        level: INFO
+    console:
+      json:
+        ~: true
+        additional-field:
+          "tenant_id":
+            value: "${TENANT_ID:OWNER}"
+            type: "string"
+          "service":
+            value: "decision-engine"
+            type: "string"
+  opentelemetry:
+    enabled: true
+    tracer:
+      exporter:
+        otlp:
+          endpoint: "${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}"
+  micrometer:
+    export:
+      prometheus:
+        enabled: true
+        path: /q/metrics
+  datasource:
+    db-kind: mssql
+    username: "${MSSQL_USER:sa}"
+    password: "${MSSQL_PASSWORD:LevelSweep!2026}"
+    jdbc:
+      url: "${MSSQL_URL:jdbc:sqlserver://localhost:1433;databaseName=level_sweep;encrypt=false}"
+  mongodb:
+    connection-string: "${MONGO_URL:mongodb://localhost:27017}"
+    database: "${MONGO_DB:level_sweep}"
+
+kafka:
+  bootstrap:
+    servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
+
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
+  log:
+    mdc-keys:
+      - tenant_id
+      - trace_id
+      - signal_id
+      - trade_id
+  feature-flags:
+    # Phase B flags — see docs/feature-flags.md. ALL OFF.
+    phase-b-multi-tenant-onboarding: false
+    phase-b-alpaca-oauth: false

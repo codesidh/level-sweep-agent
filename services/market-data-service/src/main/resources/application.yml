@@ -1,0 +1,53 @@
+quarkus:
+  application:
+    name: market-data-service
+  http:
+    port: 8081
+  log:
+    level: INFO
+    category:
+      "com.levelsweep":
+        level: INFO
+    console:
+      json:
+        ~: true
+        # MDC keys mandatory per architecture-spec §18.3 + multi-tenant-readiness skill.
+        # tenant_id and trace_id MUST appear on every log line.
+        additional-field:
+          "tenant_id":
+            value: "${TENANT_ID:OWNER}"
+            type: "string"
+          "service":
+            value: "market-data-service"
+            type: "string"
+  opentelemetry:
+    enabled: true
+    tracer:
+      exporter:
+        otlp:
+          endpoint: "${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}"
+  micrometer:
+    export:
+      prometheus:
+        enabled: true
+        path: /q/metrics
+
+# Kafka topics consumed/produced — see architecture-spec §12.1
+kafka:
+  bootstrap:
+    servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
+
+mp:
+  messaging:
+    # Placeholders. Phase 1 wires actual channels.
+    incoming: { }
+    outgoing: { }
+
+# Per-tenant + per-trace MDC keys (logback-style placeholder; honored by quarkus json)
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
+  log:
+    mdc-keys:
+      - tenant_id
+      - trace_id

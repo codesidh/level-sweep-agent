@@ -1,0 +1,12 @@
+# Quarkus native-image profile (Phase 7 hardening).
+# Activated via -Dquarkus.profile=native or -Dquarkus.package.type=native.
+quarkus:
+  log:
+    console:
+      json:
+        ~: true
+  native:
+    enabled: true
+    additional-build-args:
+      - -H:+UnlockExperimentalVMOptions
+      - -H:ResourceConfigurationFiles=resource-config.json

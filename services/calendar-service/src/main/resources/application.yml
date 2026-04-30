@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: calendar-service
+  main:
+    banner-mode: off
+  data:
+    mongodb:
+      uri: "${MONGO_URL:mongodb://localhost:27017}"
+      database: "${MONGO_DB:level_sweep}"
+
+server:
+  port: 8092
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.levelsweep: INFO
+  pattern:
+    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-}]'
+
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
+  trading-economics:
+    api-key: "${TRADING_ECONOMICS_API_KEY:}"

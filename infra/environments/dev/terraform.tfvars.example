@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+project   = "levelsweep"
+location  = "eastus"
+tenant_id = "00000000-0000-0000-0000-000000000000"
+
+tags = {
+  cost-center = "engineering"
+  owner       = "you@example.com"
+}

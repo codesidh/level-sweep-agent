@@ -1,0 +1,158 @@
+[versions]
+# --- JVM ---
+java                  = "21"
+
+# --- Frameworks ---
+quarkus               = "3.15.1"
+springBoot            = "3.3.5"
+springDependencyMgmt  = "1.1.6"
+
+# --- Build plugins ---
+spotless              = "6.25.0"
+palantirJavaFormat    = "2.50.0"
+shadow                = "8.1.1"
+
+# --- Common libraries ---
+slf4j                 = "2.0.16"
+logback               = "1.5.12"
+logstashLogback       = "8.0"
+jackson               = "2.18.1"
+micrometer            = "1.13.6"
+opentelemetry         = "1.43.0"
+opentelemetryInstr    = "2.9.0"
+resilience4j          = "2.2.0"
+
+# --- Kafka & data ---
+kafkaClients          = "3.8.1"
+mongodbDriver         = "5.2.0"
+mssqlJdbc             = "12.8.1.jre11"
+hikari                = "5.1.0"
+flyway                = "10.20.1"
+
+# --- Auth ---
+auth0Jwt              = "4.4.0"
+auth0Jwks             = "0.22.1"
+
+# --- AI / SDKs ---
+anthropic             = "0.7.0"
+alpaca                = "1.6.0"
+
+# --- Testing ---
+junit                 = "5.11.3"
+assertj               = "3.26.3"
+mockito               = "5.14.2"
+testcontainers        = "1.20.3"
+restAssured           = "5.5.0"
+
+# --- Misc ---
+jakartaValidation     = "3.1.0"
+hibernateValidator    = "8.0.1.Final"
+mapstruct             = "1.6.3"
+
+[libraries]
+# --- Logging ---
+slf4j-api             = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+logback-classic       = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+logstash-logback      = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstashLogback" }
+
+# --- Jackson ---
+jackson-databind      = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-jsr310        = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
+
+# --- Observability ---
+micrometer-core       = { module = "io.micrometer:micrometer-core", version.ref = "micrometer" }
+micrometer-prometheus = { module = "io.micrometer:micrometer-registry-prometheus", version.ref = "micrometer" }
+otel-api              = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry" }
+otel-sdk              = { module = "io.opentelemetry:opentelemetry-sdk", version.ref = "opentelemetry" }
+otel-exporter-otlp    = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
+
+# --- Resilience ---
+resilience4j-bom              = { module = "io.github.resilience4j:resilience4j-bom", version.ref = "resilience4j" }
+resilience4j-circuitbreaker   = { module = "io.github.resilience4j:resilience4j-circuitbreaker" }
+resilience4j-retry            = { module = "io.github.resilience4j:resilience4j-retry" }
+resilience4j-bulkhead         = { module = "io.github.resilience4j:resilience4j-bulkhead" }
+resilience4j-timelimiter      = { module = "io.github.resilience4j:resilience4j-timelimiter" }
+resilience4j-micrometer       = { module = "io.github.resilience4j:resilience4j-micrometer" }
+
+# --- Kafka & data ---
+kafka-clients         = { module = "org.apache.kafka:kafka-clients", version.ref = "kafkaClients" }
+mongodb-driver-sync   = { module = "org.mongodb:mongodb-driver-sync", version.ref = "mongodbDriver" }
+mssql-jdbc            = { module = "com.microsoft.sqlserver:mssql-jdbc", version.ref = "mssqlJdbc" }
+hikaricp              = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+flyway-core           = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-mssql          = { module = "org.flywaydb:flyway-sqlserver", version.ref = "flyway" }
+
+# --- Auth ---
+auth0-jwt             = { module = "com.auth0:java-jwt", version.ref = "auth0Jwt" }
+auth0-jwks            = { module = "com.auth0:jwks-rsa", version.ref = "auth0Jwks" }
+
+# --- AI / SDKs ---
+anthropic-sdk         = { module = "com.anthropic:anthropic-java", version.ref = "anthropic" }
+alpaca-sdk            = { module = "net.jacobpeterson.alpaca:alpaca-java", version.ref = "alpaca" }
+
+# --- Validation ---
+jakarta-validation    = { module = "jakarta.validation:jakarta.validation-api", version.ref = "jakartaValidation" }
+hibernate-validator   = { module = "org.hibernate.validator:hibernate-validator", version.ref = "hibernateValidator" }
+
+# --- Mapping ---
+mapstruct             = { module = "org.mapstruct:mapstruct", version.ref = "mapstruct" }
+mapstruct-processor   = { module = "org.mapstruct:mapstruct-processor", version.ref = "mapstruct" }
+
+# --- Quarkus ---
+quarkus-bom                       = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
+quarkus-arc                       = { module = "io.quarkus:quarkus-arc" }
+quarkus-rest                      = { module = "io.quarkus:quarkus-rest" }
+quarkus-rest-jackson              = { module = "io.quarkus:quarkus-rest-jackson" }
+quarkus-smallrye-health           = { module = "io.quarkus:quarkus-smallrye-health" }
+quarkus-micrometer-prometheus     = { module = "io.quarkus:quarkus-micrometer-registry-prometheus" }
+quarkus-opentelemetry             = { module = "io.quarkus:quarkus-opentelemetry" }
+quarkus-config-yaml               = { module = "io.quarkus:quarkus-config-yaml" }
+quarkus-junit5                    = { module = "io.quarkus:quarkus-junit5" }
+quarkus-rest-assured              = { module = "io.quarkus:quarkus-rest-assured" }
+quarkus-kafka-client              = { module = "io.quarkus:quarkus-kafka-client" }
+quarkus-messaging-kafka           = { module = "io.quarkus:quarkus-messaging-kafka" }
+quarkus-mongodb-client            = { module = "io.quarkus:quarkus-mongodb-client" }
+quarkus-jdbc-mssql                = { module = "io.quarkus:quarkus-jdbc-mssql" }
+quarkus-smallrye-fault-tolerance  = { module = "io.quarkus:quarkus-smallrye-fault-tolerance" }
+
+# --- Spring Boot ---
+spring-boot-starter             = { module = "org.springframework.boot:spring-boot-starter" }
+spring-boot-starter-web         = { module = "org.springframework.boot:spring-boot-starter-web" }
+spring-boot-starter-actuator    = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-boot-starter-validation  = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-boot-starter-test        = { module = "org.springframework.boot:spring-boot-starter-test" }
+spring-boot-starter-security    = { module = "org.springframework.boot:spring-boot-starter-security" }
+spring-boot-starter-oauth2-resource-server = { module = "org.springframework.boot:spring-boot-starter-oauth2-resource-server" }
+spring-boot-starter-jdbc        = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+spring-boot-starter-data-mongodb = { module = "org.springframework.boot:spring-boot-starter-data-mongodb" }
+spring-kafka                    = { module = "org.springframework.kafka:spring-kafka" }
+spring-cloud-starter-gateway    = { module = "org.springframework.cloud:spring-cloud-starter-gateway" }
+
+# --- Testing ---
+junit-bom              = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter          = { module = "org.junit.jupiter:junit-jupiter" }
+junit-jupiter-api      = { module = "org.junit.jupiter:junit-jupiter-api" }
+junit-jupiter-engine   = { module = "org.junit.jupiter:junit-jupiter-engine" }
+assertj-core           = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+mockito-core           = { module = "org.mockito:mockito-core", version.ref = "mockito" }
+mockito-junit-jupiter  = { module = "org.mockito:mockito-junit-jupiter", version.ref = "mockito" }
+testcontainers-bom     = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+testcontainers-junit   = { module = "org.testcontainers:junit-jupiter" }
+testcontainers-kafka   = { module = "org.testcontainers:kafka" }
+testcontainers-mongodb = { module = "org.testcontainers:mongodb" }
+testcontainers-mssql   = { module = "org.testcontainers:mssqlserver" }
+rest-assured           = { module = "io.rest-assured:rest-assured", version.ref = "restAssured" }
+
+[bundles]
+common-logging      = ["slf4j-api", "logback-classic", "logstash-logback"]
+common-jackson      = ["jackson-databind", "jackson-jsr310"]
+common-otel         = ["otel-api", "otel-sdk", "otel-exporter-otlp"]
+common-resilience4j = ["resilience4j-circuitbreaker", "resilience4j-retry", "resilience4j-bulkhead", "resilience4j-timelimiter", "resilience4j-micrometer"]
+testing-junit       = ["junit-jupiter-api", "junit-jupiter-engine", "assertj-core", "mockito-core", "mockito-junit-jupiter"]
+
+[plugins]
+quarkus              = { id = "io.quarkus", version.ref = "quarkus" }
+springBoot           = { id = "org.springframework.boot", version.ref = "springBoot" }
+springDependencyMgmt = { id = "io.spring.dependency-management", version.ref = "springDependencyMgmt" }
+spotless             = { id = "com.diffplug.spotless", version.ref = "spotless" }
+shadow               = { id = "com.gradleup.shadow", version.ref = "shadow" }

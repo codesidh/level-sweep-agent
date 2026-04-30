@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: user-config-service
+  main:
+    banner-mode: off
+  datasource:
+    url: "${MSSQL_URL:jdbc:sqlserver://localhost:1433;databaseName=level_sweep;encrypt=false}"
+    username: "${MSSQL_USER:sa}"
+    password: "${MSSQL_PASSWORD:LevelSweep!2026}"
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+  flyway:
+    enabled: false # enable in Phase 6
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: "${AUTH0_ISSUER:https://example.auth0.com/}"
+          audiences:
+            - "${AUTH0_AUDIENCE:https://api.levelsweep.local}"
+
+server:
+  port: 8090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.levelsweep: INFO
+  # MDC keys mandatory per architecture-spec §18.3 + multi-tenant-readiness skill.
+  pattern:
+    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-},user_id=%X{user_id:-}]'
+
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
+  feature-flags:
+    phase-b-multi-tenant-onboarding: false
+    phase-b-public-signup: false

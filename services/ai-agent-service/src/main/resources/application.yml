@@ -1,0 +1,62 @@
+quarkus:
+  application:
+    name: ai-agent-service
+  http:
+    port: 8084
+  log:
+    level: INFO
+    category:
+      "com.levelsweep":
+        level: INFO
+    console:
+      json:
+        ~: true
+        additional-field:
+          "tenant_id":
+            value: "${TENANT_ID:OWNER}"
+            type: "string"
+          "service":
+            value: "ai-agent-service"
+            type: "string"
+  opentelemetry:
+    enabled: true
+    tracer:
+      exporter:
+        otlp:
+          endpoint: "${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}"
+  micrometer:
+    export:
+      prometheus:
+        enabled: true
+        path: /q/metrics
+  mongodb:
+    connection-string: "${MONGO_URL:mongodb://localhost:27017}"
+    database: "${MONGO_DB:level_sweep}"
+
+kafka:
+  bootstrap:
+    servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
+
+anthropic:
+  api-key: "${ANTHROPIC_API_KEY:}"
+  models:
+    sentinel: "claude-haiku-4-5"
+    narrator: "claude-sonnet-4-6"
+    assistant: "claude-sonnet-4-6"
+    reviewer: "claude-opus-4-7"
+  cost-cap-usd-per-tenant-per-day:
+    sentinel: 1.00
+    narrator: 1.00
+    assistant: 5.00
+    reviewer: 2.00
+  enable-prompt-caching: true
+
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
+  log:
+    mdc-keys:
+      - tenant_id
+      - trace_id
+      - ai_role
+      - signal_id

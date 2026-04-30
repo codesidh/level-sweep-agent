@@ -1,0 +1,133 @@
+# =============================================================================
+# Infrastructure-as-Code pipeline.
+# Per architecture-spec §19.1: Terraform plan on PR / push for `infra/**`,
+# manual approval gate for apply via GitHub Environments + required reviewers.
+#
+# Authentication: OIDC to Azure (no long-lived creds). Wire AZURE_CLIENT_ID,
+# AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID as repo secrets / env secrets.
+# =============================================================================
+name: iac
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/iac.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/iac.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to apply"
+        required: true
+        type: choice
+        options: [dev, stage, prod]
+      action:
+        description: "Action"
+        required: true
+        type: choice
+        default: plan
+        options: [plan, apply]
+
+permissions:
+  contents: read
+  id-token: write       # OIDC to Azure
+  pull-requests: write  # Comment plans on PRs
+
+concurrency:
+  group: iac-${{ github.ref }}-${{ github.event.inputs.environment || 'all' }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.9.8
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # PR / push: plan all environments in matrix; comment summary on PR.
+  # ---------------------------------------------------------------------------
+  plan:
+    if: github.event_name != 'workflow_dispatch'
+    name: plan (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, stage, prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: terraform fmt -check
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        working-directory: infra/environments/${{ matrix.environment }}
+        run: terraform init -backend=false   # Phase 0: no remote backend yet.
+
+      - name: terraform validate
+        working-directory: infra/environments/${{ matrix.environment }}
+        run: terraform validate
+
+      - name: terraform plan (no real backend in Phase 0)
+        working-directory: infra/environments/${{ matrix.environment }}
+        run: |
+          # Phase 0: skeleton modules only; once a backend + provider creds are
+          # wired this becomes a real `terraform plan -out=tfplan`.
+          echo "Phase 0 plan stub for ${{ matrix.environment }} — modules empty."
+          terraform plan -input=false -lock=false || true
+
+  # ---------------------------------------------------------------------------
+  # Manual apply via workflow_dispatch — gated by a GitHub Environment that
+  # has required reviewers configured in repo settings.
+  # ---------------------------------------------------------------------------
+  apply:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
+    name: apply (${{ github.event.inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      # Configure protection rules + required reviewers in repo Settings.
+      name: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: terraform init
+        working-directory: infra/environments/${{ github.event.inputs.environment }}
+        run: terraform init
+
+      - name: terraform apply
+        working-directory: infra/environments/${{ github.event.inputs.environment }}
+        run: terraform apply -auto-approve -input=false

@@ -1,0 +1,128 @@
+# =============================================================================
+# LevelSweepAgent — local dev stack
+# Provides: Kafka (KRaft), AKHQ (Kafka UI), MS SQL Server 2022, MongoDB.
+# Aligns with architecture-spec §15 (tech stack) and §13 (data architecture).
+# =============================================================================
+services:
+
+  # --------------------------------------------------------------------------
+  # Kafka in KRaft mode (no Zookeeper). Single broker for local dev.
+  # --------------------------------------------------------------------------
+  kafka:
+    image: bitnami/kafka:3.8
+    container_name: levelsweep-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"          # external (host) PLAINTEXT
+      - "9094:9094"          # internal docker network
+    environment:
+      # KRaft single-node setup
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:9094
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_CFG_NUM_PARTITIONS: 4
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # --------------------------------------------------------------------------
+  # AKHQ — Kafka UI. http://localhost:8080
+  # --------------------------------------------------------------------------
+  akhq:
+    image: tchiotludo/akhq:0.25.1
+    container_name: levelsweep-akhq
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8089:8080"
+    environment:
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            local:
+              properties:
+                bootstrap.servers: "kafka:9094"
+
+  # --------------------------------------------------------------------------
+  # MS SQL Server 2022 — financial system of record (per arch-spec §13.1)
+  # --------------------------------------------------------------------------
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: levelsweep-mssql
+    restart: unless-stopped
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-LevelSweep!2026}"
+    volumes:
+      - mssql-data:/var/opt/mssql
+      - ./dev/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # /opt/mssql-tools18/bin/sqlcmd in 2022 image; trust cert because it's a dev container.
+      test:
+        - "CMD-SHELL"
+        - >-
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa
+          -P "${MSSQL_SA_PASSWORD:-LevelSweep!2026}"
+          -C -Q "SELECT 1" || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  # --------------------------------------------------------------------------
+  # MongoDB — audit + read models + agent memory (per arch-spec §13.2)
+  # --------------------------------------------------------------------------
+  mongodb:
+    image: mongo:7
+    container_name: levelsweep-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_ROOT_USER:-root}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_ROOT_PASSWORD:-LevelSweep!2026}"
+      MONGO_INITDB_DATABASE: "${MONGO_DB:-level_sweep}"
+    volumes:
+      - mongo-data:/data/db
+      - ./dev/mongo:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - "CMD"
+        - "mongosh"
+        - "--quiet"
+        - "--eval"
+        - "db.adminCommand({ ping: 1 }).ok"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  kafka-data:
+  mssql-data:
+  mongo-data:
+
+networks:
+  default:
+    name: levelsweep-net

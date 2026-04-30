@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: notification-service
+  main:
+    banner-mode: off
+  data:
+    mongodb:
+      uri: "${MONGO_URL:mongodb://localhost:27017}"
+      database: "${MONGO_DB:level_sweep}"
+  kafka:
+    bootstrap-servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+
+server:
+  port: 8093
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.levelsweep: INFO
+  pattern:
+    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-}]'
+
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
+  notifications:
+    telegram:
+      bot-token: "${TELEGRAM_BOT_TOKEN:}"
+      chat-id: "${TELEGRAM_CHAT_ID:}"
+    email:
+      smtp-host: "${SMTP_HOST:}"
+      smtp-port: "${SMTP_PORT:587}"
+      from: "${EMAIL_FROM:}"

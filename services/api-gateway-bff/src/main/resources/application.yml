@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: api-gateway-bff
+  main:
+    banner-mode: off
+    web-application-type: reactive
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: "${AUTH0_ISSUER:https://example.auth0.com/}"
+          audiences:
+            - "${AUTH0_AUDIENCE:https://api.levelsweep.local}"
+  cloud:
+    gateway:
+      # Phase 0 — empty route table. Phase 6 wires actual routes per architecture-spec §16.4.
+      routes: []
+      default-filters: [ ]
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.levelsweep: INFO
+    # Spring Cloud Gateway is chatty at INFO; keep at WARN.
+    org.springframework.cloud.gateway: WARN
+  pattern:
+    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-},user_id=%X{user_id:-}]'
+
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
+  feature-flags:
+    phase-b-multi-tenant-onboarding: false
+    phase-b-public-signup: false
+    phase-b-alpaca-oauth: false
