@@ -68,9 +68,31 @@ kafka:
 
 mp:
   messaging:
-    # Placeholders. Phase 1 wires actual channels.
     incoming: { }
-    outgoing: { }
+    # Outgoing bar topics — architecture-spec §12.1. Key is the symbol (StringSerializer),
+    # value is the Bar record serialized to JSON via Quarkus' ObjectMapperSerializer (Jackson).
+    # Indicators and levels are NOT published here; spec §12.1 doesn't list them.
+    outgoing:
+      bars-1m:
+        connector: smallrye-kafka
+        topic: market.bars.1m
+        value.serializer: io.quarkus.kafka.client.serialization.ObjectMapperSerializer
+        key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      bars-2m:
+        connector: smallrye-kafka
+        topic: market.bars.2m
+        value.serializer: io.quarkus.kafka.client.serialization.ObjectMapperSerializer
+        key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      bars-15m:
+        connector: smallrye-kafka
+        topic: market.bars.15m
+        value.serializer: io.quarkus.kafka.client.serialization.ObjectMapperSerializer
+        key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      bars-daily:
+        connector: smallrye-kafka
+        topic: market.bars.daily
+        value.serializer: io.quarkus.kafka.client.serialization.ObjectMapperSerializer
+        key.serializer: org.apache.kafka.common.serialization.StringSerializer
 
 # Per-tenant + per-trace MDC keys (logback-style placeholder; honored by quarkus json)
 # `levelsweep.mongo.database` is read by MongoBarRepository via @ConfigProperty.
@@ -111,3 +133,20 @@ tenant:
     mongodb:
       devservices:
         enabled: false
+    kafka:
+      devservices:
+        enabled: false
+  # Swap Kafka for the in-memory connector under %test so unit tests don't
+  # try to reach a broker. The topic + serializer keys are dropped because
+  # the in-memory connector ignores them.
+  mp:
+    messaging:
+      outgoing:
+        bars-1m:
+          connector: smallrye-in-memory
+        bars-2m:
+          connector: smallrye-in-memory
+        bars-15m:
+          connector: smallrye-in-memory
+        bars-daily:
+          connector: smallrye-in-memory
