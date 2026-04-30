@@ -107,8 +107,7 @@ public final class LevelCalculator {
                         name + ": symbol mismatch — expected=" + expectedSymbol + " got=" + b.symbol());
             }
             if (!b.timeframe().isIntraday()) {
-                throw new IllegalArgumentException(
-                        name + ": only intraday bars accepted, got " + b.timeframe());
+                throw new IllegalArgumentException(name + ": only intraday bars accepted, got " + b.timeframe());
             }
             if (b.timeframe() == Timeframe.DAILY) {
                 // Defensive — already covered by isIntraday but explicit for readers.

@@ -60,8 +60,8 @@ class LevelCalculatorTest {
     @Test
     void rejectsEmptyRth() {
         List<Bar> overnight = List.of(bar(593.0, 593.8, 592.5, 593.5, 0));
-        assertThatThrownBy(() ->
-                        LevelCalculator.compute("OWNER", "SPY", LocalDate.of(2026, 4, 30), List.of(), overnight))
+        assertThatThrownBy(
+                        () -> LevelCalculator.compute("OWNER", "SPY", LocalDate.of(2026, 4, 30), List.of(), overnight))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("rthBars");
     }
@@ -69,8 +69,7 @@ class LevelCalculatorTest {
     @Test
     void rejectsEmptyOvernight() {
         List<Bar> rth = List.of(bar(594.0, 594.5, 593.5, 594.2, 0));
-        assertThatThrownBy(() ->
-                        LevelCalculator.compute("OWNER", "SPY", LocalDate.of(2026, 4, 30), rth, List.of()))
+        assertThatThrownBy(() -> LevelCalculator.compute("OWNER", "SPY", LocalDate.of(2026, 4, 30), rth, List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("overnightBars");
     }
