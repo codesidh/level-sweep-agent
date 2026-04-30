@@ -3,7 +3,6 @@ package com.levelsweep.marketdata.observability;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.levelsweep.marketdata.alpaca.AlpacaConfig;
-import com.levelsweep.marketdata.buffer.TickRingBuffer;
 import com.levelsweep.marketdata.connection.ConnectionMonitor;
 import com.levelsweep.marketdata.connection.ConnectionState;
 import com.levelsweep.marketdata.live.LivePipeline;
@@ -14,7 +13,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.quarkus.runtime.StartupEvent;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -40,8 +38,12 @@ class MetricsBindingTest {
     void setUp() {
         registry = new SimpleMeterRegistry();
         AlpacaConfig cfg = new StubConfig();
-        monitor = new ConnectionMonitor("alpaca-ws", Clock.systemUTC());
-        pipeline = new LivePipeline(cfg, new TickRingBuffer(1000), monitor, null, Clock.systemUTC());
+        // Use the public single-arg constructor — it instantiates its own
+        // TickRingBuffer + ConnectionMonitor with the same defaults the CDI
+        // path uses. We borrow the monitor reference via the accessor so we
+        // can drive the FSM directly.
+        pipeline = new LivePipeline(cfg);
+        monitor = pipeline.connectionMonitor();
         binding = new MetricsBinding(registry, pipeline);
     }
 
