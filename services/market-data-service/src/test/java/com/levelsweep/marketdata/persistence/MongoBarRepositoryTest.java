@@ -70,6 +70,35 @@ class MongoBarRepositoryTest {
     }
 
     @Test
+    void fromDocumentRoundTripsToDocumentLossless() {
+        Bar original = new Bar(
+                "SPY",
+                Timeframe.TWO_MIN,
+                OPEN,
+                CLOSE,
+                new BigDecimal("594.0000"),
+                new BigDecimal("594.5000"),
+                new BigDecimal("593.7500"),
+                new BigDecimal("594.2500"),
+                12_345L,
+                42L);
+
+        Document doc = MongoBarRepository.toDocument(original, "OWNER", INSERTED);
+        Bar roundTripped = MongoBarRepository.fromDocument(doc);
+
+        assertThat(roundTripped.symbol()).isEqualTo("SPY");
+        assertThat(roundTripped.timeframe()).isEqualTo(Timeframe.TWO_MIN);
+        assertThat(roundTripped.openTime()).isEqualTo(OPEN);
+        assertThat(roundTripped.closeTime()).isEqualTo(CLOSE);
+        assertThat(roundTripped.open()).isEqualByComparingTo(original.open());
+        assertThat(roundTripped.high()).isEqualByComparingTo(original.high());
+        assertThat(roundTripped.low()).isEqualByComparingTo(original.low());
+        assertThat(roundTripped.close()).isEqualByComparingTo(original.close());
+        assertThat(roundTripped.volume()).isEqualTo(original.volume());
+        assertThat(roundTripped.ticks()).isEqualTo(original.ticks());
+    }
+
+    @Test
     void toDocumentUsesProvidedTenantIdNotHardcoded() {
         Bar bar = new Bar(
                 "SPY",

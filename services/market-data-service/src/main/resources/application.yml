@@ -37,6 +37,11 @@ quarkus:
   smallrye-health:
     root-path: /q/health
 
+  # Cron scheduler — fires SessionLevelScheduler at 09:29:30 ET each day.
+  # Disabled under the %test profile below so unit tests don't trigger the cron.
+  scheduler:
+    enabled: true
+
   # MS SQL datasource (architecture-spec §13.1). Health is disabled so a
   # transient DB outage does not flap liveness — readiness already covers the
   # FSM-driven service health story. Flyway migrates at start to create the
@@ -136,6 +141,10 @@ tenant:
     kafka:
       devservices:
         enabled: false
+    # Disable the daily-levels cron under tests so the scheduler doesn't fire
+    # at unpredictable wall-clock times during a CI run.
+    scheduler:
+      enabled: false
   # Swap Kafka for the in-memory connector under %test so unit tests don't
   # try to reach a broker. The topic + serializer keys are dropped because
   # the in-memory connector ignores them.

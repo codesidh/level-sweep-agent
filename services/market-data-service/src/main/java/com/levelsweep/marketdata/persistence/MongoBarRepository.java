@@ -1,14 +1,20 @@
 package com.levelsweep.marketdata.persistence;
 
 import com.levelsweep.shared.domain.marketdata.Bar;
+import com.levelsweep.shared.domain.marketdata.Timeframe;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.Sorts;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.bson.Document;
@@ -69,6 +75,38 @@ public class MongoBarRepository {
         }
     }
 
+    /**
+     * Read bars for a given {@code (tenantId, symbol, timeframe)} within the half-open
+     * window {@code [start, endExclusive)}, sorted by {@code openTime} ascending. Returns
+     * an empty list on any read error so callers (the {@link
+     * com.levelsweep.marketdata.live.SessionLevelScheduler} primarily) can degrade
+     * gracefully when Mongo is offline.
+     */
+    public List<Bar> findBarsByWindow(
+            String tenantId, String symbol, Timeframe timeframe, Instant start, Instant endExclusive) {
+        try {
+            Document filter = new Document("tenantId", tenantId)
+                    .append("symbol", symbol)
+                    .append("timeframe", timeframe.name())
+                    .append("openTime", new Document("$gte", Date.from(start)).append("$lt", Date.from(endExclusive)));
+            List<Bar> out = new ArrayList<>();
+            for (Document d : bars().find(filter).sort(Sorts.ascending("openTime"))) {
+                out.add(fromDocument(d));
+            }
+            return out;
+        } catch (RuntimeException e) {
+            LOG.warn(
+                    "mongo bar read failed tenantId={} symbol={} timeframe={} start={} end={}: {}",
+                    tenantId,
+                    symbol,
+                    timeframe,
+                    start,
+                    endExclusive,
+                    e.toString());
+            return Collections.emptyList();
+        }
+    }
+
     /** Package-private: extracted for unit tests of document shape. */
     static Document toDocument(Bar bar, String tenantId, Instant insertedAt) {
         Document d = new Document();
@@ -88,6 +126,21 @@ public class MongoBarRepository {
         // TTL anchor — mongo evicts the doc 30d after this instant.
         d.put("insertedAt", Date.from(insertedAt));
         return d;
+    }
+
+    /** Reverse mapping for documents read via {@link #findBarsByWindow}. Package-private for tests. */
+    static Bar fromDocument(Document d) {
+        String symbol = d.getString("symbol");
+        Timeframe tf = Timeframe.valueOf(d.getString("timeframe"));
+        Instant openTime = ((Date) d.get("openTime")).toInstant();
+        Instant closeTime = ((Date) d.get("closeTime")).toInstant();
+        BigDecimal o = new BigDecimal(d.getString("o"));
+        BigDecimal h = new BigDecimal(d.getString("h"));
+        BigDecimal l = new BigDecimal(d.getString("l"));
+        BigDecimal c = new BigDecimal(d.getString("c"));
+        long volume = d.getLong("volume");
+        long ticks = d.getLong("ticks");
+        return new Bar(symbol, tf, openTime, closeTime, o, h, l, c, volume, ticks);
     }
 
     private MongoCollection<Document> bars() {
