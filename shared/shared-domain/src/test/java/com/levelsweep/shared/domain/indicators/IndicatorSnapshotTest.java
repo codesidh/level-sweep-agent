@@ -11,25 +11,23 @@ class IndicatorSnapshotTest {
 
     @Test
     void readinessFlagsReflectNullValues() {
-        IndicatorSnapshot all =
-                new IndicatorSnapshot(
-                        "SPY",
-                        Instant.now(),
-                        BigDecimal.valueOf(594.0),
-                        BigDecimal.valueOf(593.5),
-                        BigDecimal.valueOf(593.0),
-                        BigDecimal.valueOf(2.5));
+        IndicatorSnapshot all = new IndicatorSnapshot(
+                "SPY",
+                Instant.now(),
+                BigDecimal.valueOf(594.0),
+                BigDecimal.valueOf(593.5),
+                BigDecimal.valueOf(593.0),
+                BigDecimal.valueOf(2.5));
         assertThat(all.emasReady()).isTrue();
         assertThat(all.fullyReady()).isTrue();
 
-        IndicatorSnapshot emasOnly =
-                new IndicatorSnapshot(
-                        "SPY",
-                        Instant.now(),
-                        BigDecimal.valueOf(594.0),
-                        BigDecimal.valueOf(593.5),
-                        BigDecimal.valueOf(593.0),
-                        null);
+        IndicatorSnapshot emasOnly = new IndicatorSnapshot(
+                "SPY",
+                Instant.now(),
+                BigDecimal.valueOf(594.0),
+                BigDecimal.valueOf(593.5),
+                BigDecimal.valueOf(593.0),
+                null);
         assertThat(emasOnly.emasReady()).isTrue();
         assertThat(emasOnly.fullyReady()).isFalse();
 

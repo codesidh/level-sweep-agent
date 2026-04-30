@@ -66,8 +66,7 @@ class AtrCalculatorTest {
         // bar 3: TR = max(105-101=4, |105-102|=3, |101-102|=1) = 4
         // Wilder: ATR_new = (3 * 2 + 4) / 3 = 10/3 = 3.333...
         BigDecimal next = a.update(dailyBar(102, 105, 101, 104, 3));
-        assertThat(next.setScale(4, java.math.RoundingMode.HALF_UP))
-                .isEqualByComparingTo("3.3333");
+        assertThat(next.setScale(4, java.math.RoundingMode.HALF_UP)).isEqualByComparingTo("3.3333");
     }
 
     @Test
@@ -79,8 +78,8 @@ class AtrCalculatorTest {
     @Test
     void trueRangeChoosesMaxOfThreeWhenPrevCloseExists() {
         // h-l = 5, |h-pc| = 8, |l-pc| = 3 → max = 8
-        BigDecimal tr = AtrCalculator.trueRange(
-                BigDecimal.valueOf(105), BigDecimal.valueOf(100), BigDecimal.valueOf(97));
+        BigDecimal tr =
+                AtrCalculator.trueRange(BigDecimal.valueOf(105), BigDecimal.valueOf(100), BigDecimal.valueOf(97));
         assertThat(tr).isEqualByComparingTo("8");
     }
 

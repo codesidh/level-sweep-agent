@@ -38,7 +38,13 @@ public final class IndicatorEngine implements BarListener {
     private volatile IndicatorSnapshot latestSnapshot;
 
     public IndicatorEngine(String symbol, Consumer<IndicatorSnapshot> snapshotSink) {
-        this(symbol, new EmaCalculator(13), new EmaCalculator(48), new EmaCalculator(200), new AtrCalculator(14), snapshotSink);
+        this(
+                symbol,
+                new EmaCalculator(13),
+                new EmaCalculator(48),
+                new EmaCalculator(200),
+                new AtrCalculator(14),
+                snapshotSink);
     }
 
     /** Constructor allowing custom periods (used by tests). */

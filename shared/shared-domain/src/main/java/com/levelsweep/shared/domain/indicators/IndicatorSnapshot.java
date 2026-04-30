@@ -20,12 +20,7 @@ import java.util.Objects;
  * 14 daily bars.
  */
 public record IndicatorSnapshot(
-        String symbol,
-        Instant timestamp,
-        BigDecimal ema13,
-        BigDecimal ema48,
-        BigDecimal ema200,
-        BigDecimal atr14) {
+        String symbol, Instant timestamp, BigDecimal ema13, BigDecimal ema48, BigDecimal ema200, BigDecimal atr14) {
 
     public IndicatorSnapshot {
         Objects.requireNonNull(symbol, "symbol");

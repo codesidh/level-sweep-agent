@@ -41,8 +41,7 @@ public final class EmaCalculator {
             throw new IllegalArgumentException("period must be positive: " + period);
         }
         this.period = period;
-        this.alpha = BigDecimal.valueOf(2)
-                .divide(BigDecimal.valueOf(period + 1L), MC);
+        this.alpha = BigDecimal.valueOf(2).divide(BigDecimal.valueOf(period + 1L), MC);
         this.oneMinusAlpha = BigDecimal.ONE.subtract(alpha, MC);
     }
 
