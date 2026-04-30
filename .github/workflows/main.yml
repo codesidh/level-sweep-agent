@@ -40,6 +40,10 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Pin to 8.10.2 to match the wrapper. Quarkus 3.15.1 plugin is not
+          # yet compatible with Gradle 9.x (detachedConfiguration extension).
+          gradle-version: 8.10.2
 
       - name: Bootstrap Gradle wrapper jar
         run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin

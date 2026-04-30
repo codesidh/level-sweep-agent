@@ -43,6 +43,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
+          # Pin host Gradle to match the wrapper version. The Quarkus 3.15.1
+          # plugin uses a detachedConfiguration-extending pattern that Gradle
+          # 9.x forbids ("Extending a detachedConfiguration is not allowed"),
+          # so we stay on 8.x until Quarkus releases a 9-compatible plugin.
+          gradle-version: 8.10.2
           cache-read-only: ${{ github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' }}
 
       # Generate wrapper jar on the fly because we don't commit it.
