@@ -1,6 +1,7 @@
 package com.levelsweep.marketdata.live;
 
 import com.levelsweep.marketdata.alpaca.AlpacaConfig;
+import com.levelsweep.marketdata.alpaca.AlpacaRestClient;
 import com.levelsweep.marketdata.alpaca.AlpacaStream;
 import com.levelsweep.marketdata.api.JdkWsTransport;
 import com.levelsweep.marketdata.api.TickListener;
@@ -23,6 +24,8 @@ import jakarta.inject.Inject;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
@@ -80,12 +83,20 @@ public class LivePipeline {
     private static final long IDLE_PARK_NANOS = 1_000_000L; // 1 ms
     // Shutdown bound for awaiting the drainer thread.
     private static final long SHUTDOWN_AWAIT_SECONDS = 5L;
+    // EMA pre-warm window. EMA200 needs ~200 2-min bars (~6h40m of RTH); we widen
+    // to 14h to cover an overnight gap without requiring the previous trading day.
+    static final Duration PREWARM_LOOKBACK = Duration.ofHours(14);
+    static final int PREWARM_LIMIT = 200;
+    // If pre-warm exceeds this duration, log a warning — typical fetch is well under 1s.
+    private static final long PREWARM_SLOW_MILLIS = 5_000L;
 
     private final AlpacaConfig cfg;
     private final TickRingBuffer buffer;
     private final ConnectionMonitor connectionMonitor;
     private final BarAggregator barAggregator;
     private final IndicatorEngine indicatorEngine;
+    private final AlpacaRestClient restClient;
+    private final Clock clock;
     private final AtomicLong quoteCount = new AtomicLong();
     // Additional bar listeners registered post-construction (e.g. persistence wiring).
     // Copy-on-write so the bar fan-out lambda iterates a stable snapshot per call.
@@ -96,15 +107,27 @@ public class LivePipeline {
     private volatile boolean shutdown;
 
     @Inject
-    public LivePipeline(AlpacaConfig cfg) {
-        this(cfg, new TickRingBuffer(cfg.ringBufferCapacity()), new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+    public LivePipeline(AlpacaConfig cfg, AlpacaRestClient restClient, Clock clock) {
+        this(
+                cfg,
+                new TickRingBuffer(cfg.ringBufferCapacity()),
+                new ConnectionMonitor("alpaca-ws", Clock.systemUTC()),
+                restClient,
+                clock);
     }
 
     /** Test seam: lets a test inject a sized buffer + monitor without touching env config. */
-    LivePipeline(AlpacaConfig cfg, TickRingBuffer buffer, ConnectionMonitor connectionMonitor) {
+    LivePipeline(
+            AlpacaConfig cfg,
+            TickRingBuffer buffer,
+            ConnectionMonitor connectionMonitor,
+            AlpacaRestClient restClient,
+            Clock clock) {
         this.cfg = Objects.requireNonNull(cfg, "cfg");
         this.buffer = Objects.requireNonNull(buffer, "buffer");
         this.connectionMonitor = Objects.requireNonNull(connectionMonitor, "connectionMonitor");
+        this.restClient = restClient; // may be null in legacy tests; pre-warm is skipped if null
+        this.clock = clock != null ? clock : Clock.systemUTC();
 
         // Phase 1 ships single-symbol (SPY). Multi-symbol expansion will register one
         // BarAggregator per symbol upstream of a fan-out router; the per-symbol contract
@@ -164,6 +187,14 @@ public class LivePipeline {
                 cfg.ringBufferCapacity(),
                 cfg.feed(),
                 connectionMonitor.dependency());
+
+        // EMA pre-warm runs synchronously BEFORE the drainer starts and BEFORE the WS
+        // connects, so the IndicatorEngine has populated 13/48/200 windows before the
+        // first live bar arrives. Skip when api-key is blank (dev / replay) — the system
+        // still runs unbootstrapped and EMA200 just stays null longer.
+        if (!cfg.apiKey().isBlank() && restClient != null) {
+            prewarmIndicators();
+        }
 
         // Drainer is always started — even when the WS is skipped — so tests and the
         // in-process replay path can offer ticks straight to the buffer and observe
@@ -257,6 +288,54 @@ public class LivePipeline {
             } catch (Exception e) {
                 LOG.warn("alpaca stream stop did not complete cleanly: {}", e.toString());
             }
+        }
+    }
+
+    /**
+     * Pre-warm the {@link IndicatorEngine} EMA windows by replaying a window of recent
+     * 2-min historical bars from Alpaca. We deliberately feed bars only into the
+     * indicator engine (not the {@link BarAggregator}) — seeding the aggregator would
+     * create phantom in-flight bar state at the next live tick boundary.
+     *
+     * <p>Package-private so tests can drive it directly without needing to spin up the
+     * WS connect path.
+     */
+    void prewarmIndicators() {
+        String symbol = cfg.symbols().isEmpty() ? "SPY" : cfg.symbols().get(0);
+        Instant now = Instant.now(clock);
+        Instant start = now.minus(PREWARM_LOOKBACK);
+        long t0 = System.currentTimeMillis();
+        try {
+            List<Bar> historical =
+                    restClient.fetchHistoricalBars(symbol, Timeframe.TWO_MIN, start, now, PREWARM_LIMIT);
+            int seeded = 0;
+            for (Bar bar : historical) {
+                // Pre-warm bars are fed directly into the indicator engine — the aggregator
+                // is intentionally bypassed to avoid corrupting its in-flight bar state.
+                try {
+                    indicatorEngine.onBar(bar);
+                    seeded++;
+                } catch (RuntimeException e) {
+                    LOG.warn("indicator engine prewarm onBar failed: {}", e.toString());
+                }
+            }
+            long elapsed = System.currentTimeMillis() - t0;
+            if (elapsed > PREWARM_SLOW_MILLIS) {
+                LOG.warn("prewarm slow: {} ms (threshold {} ms)", elapsed, PREWARM_SLOW_MILLIS);
+            }
+            if (seeded == 0) {
+                LOG.warn("prewarm fetched 0 bars for symbol={} window=[{}, {}) — EMA windows remain cold", symbol, start, now);
+                return;
+            }
+            LOG.info(
+                    "prewarm complete: {} bars seeded; latest ema13={} ema48={} ema200={}",
+                    seeded,
+                    indicatorEngine.currentEma13(),
+                    indicatorEngine.currentEma48(),
+                    indicatorEngine.currentEma200());
+        } catch (RuntimeException e) {
+            // Pre-warm is best-effort — never fail startup if it fails.
+            LOG.warn("prewarm failed for symbol={}: {} — continuing without warm EMA state", symbol, e.toString());
         }
     }
 

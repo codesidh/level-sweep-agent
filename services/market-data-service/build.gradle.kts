@@ -25,6 +25,7 @@ dependencies {
     implementation(libs.quarkus.flyway)
     implementation(libs.flyway.mssql)
     implementation(libs.quarkus.smallrye.fault.tolerance)
+    implementation(libs.quarkus.scheduler)
 
     testImplementation(libs.quarkus.junit5)
     testImplementation(libs.quarkus.rest.assured)

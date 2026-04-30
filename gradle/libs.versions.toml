@@ -125,6 +125,7 @@ quarkus-jdbc-mssql                = { module = "io.quarkus:quarkus-jdbc-mssql" }
 quarkus-agroal                    = { module = "io.quarkus:quarkus-agroal" }
 quarkus-flyway                    = { module = "io.quarkus:quarkus-flyway" }
 quarkus-smallrye-fault-tolerance  = { module = "io.quarkus:quarkus-smallrye-fault-tolerance" }
+quarkus-scheduler                 = { module = "io.quarkus:quarkus-scheduler" }
 
 # --- Spring Boot ---
 spring-boot-starter             = { module = "org.springframework.boot:spring-boot-starter" }

@@ -1,18 +1,27 @@
 package com.levelsweep.marketdata.live;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.levelsweep.marketdata.alpaca.AlpacaConfig;
+import com.levelsweep.marketdata.alpaca.AlpacaRestClient;
 import com.levelsweep.marketdata.bars.BarListener;
 import com.levelsweep.marketdata.buffer.TickRingBuffer;
 import com.levelsweep.marketdata.connection.ConnectionMonitor;
 import com.levelsweep.shared.domain.marketdata.Bar;
 import com.levelsweep.shared.domain.marketdata.Tick;
+import com.levelsweep.shared.domain.marketdata.Timeframe;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -37,8 +46,12 @@ class LivePipelineTest {
     @Test
     void blankApiKeySkipsWsButStartsDrainer() throws Exception {
         AlpacaConfig cfg = new StubConfig("");
-        LivePipeline pipeline =
-                new LivePipeline(cfg, new TickRingBuffer(1000), new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+        LivePipeline pipeline = new LivePipeline(
+                cfg,
+                new TickRingBuffer(1000),
+                new ConnectionMonitor("alpaca-ws", Clock.systemUTC()),
+                null,
+                Clock.systemUTC());
 
         pipeline.start(new StartupEvent());
 
@@ -60,7 +73,8 @@ class LivePipelineTest {
     void endToEndTicksProduceBarsThroughDrainer() throws Exception {
         AlpacaConfig cfg = new StubConfig("");
         TickRingBuffer buffer = new TickRingBuffer(10_000);
-        LivePipeline pipeline = new LivePipeline(cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+        LivePipeline pipeline = new LivePipeline(
+                cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()), null, Clock.systemUTC());
 
         // Capture bars by re-using the aggregator's internal state — simplest signal is
         // the IndicatorEngine, which only fires on TWO_MIN closes. We can also probe the
@@ -104,7 +118,8 @@ class LivePipelineTest {
     void registeredBarListenerReceivesBarsAndExceptionIsIsolated() throws Exception {
         AlpacaConfig cfg = new StubConfig("");
         TickRingBuffer buffer = new TickRingBuffer(10_000);
-        LivePipeline pipeline = new LivePipeline(cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+        LivePipeline pipeline = new LivePipeline(
+                cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()), null, Clock.systemUTC());
 
         // One listener captures bars; another always throws to verify isolation.
         CopyOnWriteArrayList<Bar> captured = new CopyOnWriteArrayList<>();
@@ -137,6 +152,69 @@ class LivePipelineTest {
         assertThat(pipeline.indicatorEngine().latest())
                 .as("indicator engine still received bars despite a throwing peer listener")
                 .isNotNull();
+
+        pipeline.stop(new ShutdownEvent());
+    }
+
+    @Test
+    void prewarmFeedsBarsToIndicatorEngineDirectly() throws Exception {
+        // Drive prewarmIndicators() directly so the test isn't entangled with the WS
+        // attach path — the start() integration is exercised separately by
+        // prewarmIsBypassedWhenApiKeyIsBlank.
+        AlpacaConfig cfg = new StubConfig("AKtest");
+        AlpacaRestClient restClient = mock(AlpacaRestClient.class);
+        Instant t0 = Instant.parse("2026-04-30T13:30:00Z");
+        List<Bar> historical = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            Instant open = t0.plusSeconds(i * 120L);
+            Instant close = open.plusSeconds(120L);
+            historical.add(new Bar(
+                    "SPY",
+                    Timeframe.TWO_MIN,
+                    open,
+                    close,
+                    new BigDecimal("594.00"),
+                    new BigDecimal("594.50"),
+                    new BigDecimal("593.75"),
+                    new BigDecimal("594.25"),
+                    1000L,
+                    50L));
+        }
+        when(restClient.fetchHistoricalBars(eq("SPY"), eq(Timeframe.TWO_MIN), any(), any(), anyInt()))
+                .thenReturn(historical);
+
+        TickRingBuffer buffer = new TickRingBuffer(1000);
+        LivePipeline pipeline = new LivePipeline(
+                cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()), restClient, Clock.systemUTC());
+
+        pipeline.prewarmIndicators();
+
+        assertThat(pipeline.indicatorEngine().latest())
+                .as("indicator engine should have a snapshot from prewarm")
+                .isNotNull();
+        assertThat(pipeline.indicatorEngine().latest().symbol()).isEqualTo("SPY");
+        assertThat(pipeline.indicatorEngine().latest().timestamp())
+                .as("snapshot timestamp matches the last prewarm bar close")
+                .isEqualTo(historical.get(historical.size() - 1).closeTime());
+        // Pre-warm must NOT seed the aggregator — its in-flight bar state stays untouched.
+        assertThat(buffer.size()).as("aggregator path is bypassed by prewarm").isZero();
+    }
+
+    @Test
+    void prewarmIsBypassedWhenApiKeyIsBlank() throws Exception {
+        AlpacaConfig cfg = new StubConfig(""); // blank → skip prewarm and skip WS
+        AlpacaRestClient restClient = mock(AlpacaRestClient.class);
+        TickRingBuffer buffer = new TickRingBuffer(1000);
+        LivePipeline pipeline = new LivePipeline(
+                cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()), restClient, Clock.systemUTC());
+
+        pipeline.start(new StartupEvent());
+
+        // No historical fetch should have been attempted.
+        verifyNoInteractions(restClient);
+        assertThat(pipeline.indicatorEngine().latest())
+                .as("no prewarm → no snapshot yet")
+                .isNull();
 
         pipeline.stop(new ShutdownEvent());
     }
