@@ -1,0 +1,5 @@
+# Keep the build context minimal — only ship the post-build fast-jar layout
+# and the Dockerfile itself.
+*
+!build/quarkus-app/
+!src/main/docker/Dockerfile.jvm

@@ -125,6 +125,27 @@ Health endpoints:
 - Quarkus: `GET /q/health` (smallrye-health)
 - Spring Boot: `GET /actuator/health`
 
+## 5a. Building the market-data-service container locally
+
+The CI pipeline (`main.yml`) builds and pushes a JVM-mode image to
+`ghcr.io/codesidh/level-sweep-agent/market-data-service` on every push to main.
+To reproduce locally:
+
+```bash
+./gradlew :services:market-data-service:quarkusBuild --no-daemon
+docker build \
+  -t market-data-service:dev \
+  -f services/market-data-service/src/main/docker/Dockerfile.jvm \
+  services/market-data-service
+docker run --rm -p 8081:8081 \
+  -e ALPACA_API_KEY \
+  -e ALPACA_SECRET_KEY \
+  market-data-service:dev
+```
+
+Native-image build is a Phase 7 task — for now the container ships a JRE 21
+(Eclipse Temurin) plus the Quarkus fast-jar.
+
 ## 6. Logs & MDC
 
 Every service logs structured JSON with mandatory MDC keys `tenant_id` and
