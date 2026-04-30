@@ -116,6 +116,20 @@ public class LivePipeline {
                 clock);
     }
 
+    /**
+     * Backwards-compatible single-arg ctor used by older unit tests that don't need to
+     * exercise the pre-warm or scheduler paths. Constructs a default-sized buffer +
+     * monitor and skips pre-warm (the {@link AlpacaRestClient} dependency is null).
+     */
+    public LivePipeline(AlpacaConfig cfg) {
+        this(
+                cfg,
+                new TickRingBuffer(cfg.ringBufferCapacity()),
+                new ConnectionMonitor("alpaca-ws", Clock.systemUTC()),
+                null,
+                Clock.systemUTC());
+    }
+
     /** Test seam: lets a test inject a sized buffer + monitor without touching env config. */
     LivePipeline(
             AlpacaConfig cfg,
