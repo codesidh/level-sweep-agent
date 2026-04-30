@@ -1,13 +1,10 @@
 package com.levelsweep.marketdata.messaging;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.levelsweep.marketdata.alpaca.AlpacaConfig;
-import com.levelsweep.marketdata.buffer.TickRingBuffer;
-import com.levelsweep.marketdata.connection.ConnectionMonitor;
 import com.levelsweep.marketdata.live.LivePipeline;
 import com.levelsweep.shared.domain.marketdata.Bar;
 import com.levelsweep.shared.domain.marketdata.Tick;
@@ -16,23 +13,28 @@ import io.smallrye.mutiny.Uni;
 import io.smallrye.reactive.messaging.MutinyEmitter;
 import io.smallrye.reactive.messaging.kafka.Record;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Verifies that {@link MessagingWiring#onStart(StartupEvent)} registers a bar listener on
- * {@link LivePipeline} that delegates to {@link BarEmitter}, and that bars driven through
- * the live pipeline reach the emitter end-to-end.
+ * {@link LivePipeline} that delegates to {@link BarEmitter}. Bars are fed directly into the
+ * pipeline's {@code BarAggregator} (the public test seam), bypassing the drainer thread
+ * and the start/stop lifecycle entirely — neither is exercised by this PR.
  *
- * <p>Plain JUnit (no {@code @QuarkusTest}) — we wire a real {@link LivePipeline} with a
- * blank Alpaca config (skips WS connect, drainer still runs) and a mock {@link BarEmitter}.
+ * <p>Plain JUnit (no {@code @QuarkusTest}); CDI is not bootstrapped — we wire dependencies
+ * by hand. The {@code MutinyEmitter} fields are Mockito mocks so no Kafka broker is needed.
+ *
+ * <p>{@code MutinyEmitter#send} has two overloads ({@code send(T)} and
+ * {@code <M extends Message> send(M)}); we disambiguate via
+ * {@code ArgumentMatchers.<Record<String, Bar>>any()}.
  */
 @ExtendWith(MockitoExtension.class)
 class MessagingWiringTest {
@@ -51,84 +53,57 @@ class MessagingWiringTest {
     @Mock
     MutinyEmitter<Record<String, Bar>> daily;
 
+    @SuppressWarnings("unchecked")
+    private static Record<String, Bar> anyRecord() {
+        return ArgumentMatchers.<Record<String, Bar>>any();
+    }
+
     @Test
-    void registersListenerOnStartupAndForwardsBarsToEmitter() throws Exception {
-        when(oneMin.send(any())).thenReturn(Uni.createFrom().voidItem());
-        when(twoMin.send(any())).thenReturn(Uni.createFrom().voidItem());
-        when(fifteenMin.send(any())).thenReturn(Uni.createFrom().voidItem());
-        when(daily.send(any())).thenReturn(Uni.createFrom().voidItem());
+    void onStartRegistersListenerThatForwardsBarsToEmitter() {
+        when(oneMin.send(anyRecord())).thenReturn(Uni.createFrom().voidItem());
+        when(twoMin.send(anyRecord())).thenReturn(Uni.createFrom().voidItem());
 
         BarEmitter emitter = new BarEmitter(oneMin, twoMin, fifteenMin, daily);
-        AlpacaConfig cfg = new StubConfig("");
-        TickRingBuffer buffer = new TickRingBuffer(10_000);
-        LivePipeline pipeline = new LivePipeline(cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+        LivePipeline pipeline = new LivePipeline(new StubConfig());
         MessagingWiring wiring = new MessagingWiring(pipeline, emitter);
 
-        pipeline.start(new StartupEvent());
+        // Register the messaging listener on the pipeline.
         wiring.onStart(new StartupEvent());
 
-        // Drive ticks straddling a 1-min and 2-min boundary so both ONE_MIN and TWO_MIN
-        // bars close. 15-min and DAILY won't close in this window — that's fine; the
-        // emitter assertion below scopes itself to the timeframes we actually closed.
+        // Drive ticks straight into the aggregator (bypasses ring buffer + drainer; the
+        // bar fan-out lambda runs on this thread, so the assertion below is synchronous).
         BigDecimal price = new BigDecimal("594.00");
         for (int i = 0; i < 60; i++) {
             // First minute: [13:30:00, 13:31:00)
-            buffer.offer(tick("SPY", price.toPlainString(), 10, SESSION_START.plusSeconds(i)));
+            pipeline.barAggregator().onTick(tick("SPY", price, SESSION_START.plusSeconds(i)));
         }
         for (int i = 0; i < 60; i++) {
-            // Second minute: [13:31:00, 13:32:00) — crossing into minute 32 closes the
-            // first 2-min bar.
-            buffer.offer(tick("SPY", price.toPlainString(), 10, SESSION_START.plusSeconds(60 + i)));
+            // Second minute: [13:31:00, 13:32:00)
+            pipeline.barAggregator().onTick(tick("SPY", price, SESSION_START.plusSeconds(60 + i)));
         }
-        // Crossing into the third minute closes the second 1-min bar AND the first
-        // 2-min bar [13:30:00, 13:32:00).
-        buffer.offer(tick("SPY", price.toPlainString(), 10, SESSION_START.plus(Duration.ofMinutes(2))));
+        // Crossing into the third minute closes the second 1-minute bar AND the first
+        // 2-minute bar [13:30:00, 13:32:00) — both should reach the emitter.
+        pipeline.barAggregator().onTick(tick("SPY", price, SESSION_START.plus(Duration.ofMinutes(2))));
 
-        // Drainer is asynchronous — wait for the sends to be observed.
-        awaitUntil(
-                () -> {
-                    try {
-                        verify(oneMin, org.mockito.Mockito.atLeastOnce()).send(any());
-                        verify(twoMin, org.mockito.Mockito.atLeastOnce()).send(any());
-                        return true;
-                    } catch (AssertionError | RuntimeException e) {
-                        return false;
-                    }
-                },
-                3_000L);
+        verify(oneMin, Mockito.atLeastOnce()).send(anyRecord());
+        verify(twoMin, Mockito.atLeastOnce()).send(anyRecord());
 
-        // Sanity: timeframes we never closed should not have been emitted.
-        verify(fifteenMin, never()).send(any());
-        verify(daily, never()).send(any());
-
-        pipeline.stop(new io.quarkus.runtime.ShutdownEvent());
+        // We never crossed a 15-minute or daily boundary, so those channels stay quiet.
+        verify(fifteenMin, never()).send(anyRecord());
+        verify(daily, never()).send(anyRecord());
     }
 
-    private static Tick tick(String symbol, String price, long size, Instant ts) {
-        return new Tick(symbol, new BigDecimal(price), size, ts);
+    private static Tick tick(String symbol, BigDecimal price, Instant ts) {
+        return new Tick(symbol, price, 10L, ts);
     }
 
-    private static void awaitUntil(BooleanSupplier cond, long timeoutMs) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < deadline) {
-            if (cond.getAsBoolean()) {
-                return;
-            }
-            Thread.sleep(20L);
-        }
-        if (!cond.getAsBoolean()) {
-            throw new AssertionError("condition did not become true within " + timeoutMs + " ms");
-        }
-    }
-
-    /** Minimal stub of {@link AlpacaConfig} returning a blank api-key so WS connect is skipped. */
+    /**
+     * Minimal {@link AlpacaConfig} stub. Blank api-key keeps the WS path off, and the
+     * defaults match the production interface so {@link LivePipeline}'s public constructor
+     * can build its own buffer + connection monitor without us touching package-private
+     * test seams.
+     */
     private static final class StubConfig implements AlpacaConfig {
-        private final String apiKey;
-
-        StubConfig(String apiKey) {
-            this.apiKey = apiKey;
-        }
-
         @Override
         public String wsBaseUrl() {
             return "wss://stream.data.alpaca.markets";
@@ -151,7 +126,7 @@ class MessagingWiringTest {
 
         @Override
         public String apiKey() {
-            return apiKey;
+            return "";
         }
 
         @Override
