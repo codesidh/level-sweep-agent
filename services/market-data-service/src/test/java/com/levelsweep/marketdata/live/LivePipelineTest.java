@@ -144,8 +144,7 @@ class LivePipelineTest {
         // Wait for both observable signals to land — the 2m boundary feeds the indicator
         // engine, the bar fan-out feeds the registered listeners. Awaiting only on
         // captured.isEmpty() races with the indicator engine because 1m bars land first.
-        awaitUntil(
-                () -> !captured.isEmpty() && pipeline.indicatorEngine().latest() != null, 5_000L);
+        awaitUntil(() -> !captured.isEmpty() && pipeline.indicatorEngine().latest() != null, 5_000L);
 
         assertThat(captured)
                 .as("registered listener should receive bars from fan-out")
