@@ -3,8 +3,10 @@ package com.levelsweep.marketdata.live;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.levelsweep.marketdata.alpaca.AlpacaConfig;
+import com.levelsweep.marketdata.bars.BarListener;
 import com.levelsweep.marketdata.buffer.TickRingBuffer;
 import com.levelsweep.marketdata.connection.ConnectionMonitor;
+import com.levelsweep.shared.domain.marketdata.Bar;
 import com.levelsweep.shared.domain.marketdata.Tick;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
@@ -12,6 +14,8 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 
@@ -92,6 +96,45 @@ class LivePipelineTest {
         // their respective windows fill), so we only assert snapshot presence here.
         assertThat(pipeline.indicatorEngine().latest()).isNotNull();
         assertThat(pipeline.indicatorEngine().latest().symbol()).isEqualTo("SPY");
+
+        pipeline.stop(new ShutdownEvent());
+    }
+
+    @Test
+    void registeredBarListenerReceivesBarsAndExceptionIsIsolated() throws Exception {
+        AlpacaConfig cfg = new StubConfig("");
+        TickRingBuffer buffer = new TickRingBuffer(10_000);
+        LivePipeline pipeline = new LivePipeline(cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+
+        // One listener captures bars; another always throws to verify isolation.
+        CopyOnWriteArrayList<Bar> captured = new CopyOnWriteArrayList<>();
+        AtomicInteger throwerInvocations = new AtomicInteger();
+        BarListener thrower = bar -> {
+            throwerInvocations.incrementAndGet();
+            throw new RuntimeException("simulated downstream failure");
+        };
+        pipeline.registerBarListener(thrower);
+        pipeline.registerBarListener(captured::add);
+
+        pipeline.start(new StartupEvent());
+
+        // Cross a 2m bar boundary so the aggregator emits at least one bar.
+        for (int i = 0; i < 100; i++) {
+            buffer.offer(tick("SPY", "594.00", 10, SESSION_START.plusSeconds(i)));
+        }
+        for (int i = 0; i < 5; i++) {
+            buffer.offer(tick("SPY", "594.00", 10, SESSION_START.plusSeconds(120L + i)));
+        }
+
+        awaitUntil(() -> !captured.isEmpty(), 5_000L);
+
+        assertThat(captured).as("registered listener should receive bars from fan-out").isNotEmpty();
+        assertThat(throwerInvocations.get())
+                .as("the throwing listener was invoked but its failure did not block the next listener")
+                .isPositive();
+        assertThat(pipeline.indicatorEngine().latest())
+                .as("indicator engine still received bars despite a throwing peer listener")
+                .isNotNull();
 
         pipeline.stop(new ShutdownEvent());
     }
