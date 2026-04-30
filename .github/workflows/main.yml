@@ -93,6 +93,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write    # OIDC for `azure/login` so we can push to ACR.
     steps:
       - uses: actions/checkout@v4
 
@@ -124,18 +125,52 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Azure OIDC + ACR login. Gated on push-to-main so PRs from forks (which
+      # don't have access to OIDC secrets) don't fail. Also skipped when
+      # ACR_LOGIN_SERVER is unset, so the workflow stays GHCR-only until the
+      # operator wires the dev environment secrets.
+      - name: Azure login (OIDC)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.ACR_LOGIN_SERVER != ''
+        uses: azure/login@v2
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.ACR_NAME != ''
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+        run: az acr login --name "${ACR_NAME}"
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Compute image tags
         id: tags
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          BASE="ghcr.io/${OWNER}/${REPO}/market-data-service"
-          echo "base=${BASE}" >> $GITHUB_OUTPUT
-          echo "sha=${BASE}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
-          echo "latest=${BASE}:latest" >> $GITHUB_OUTPUT
+          GHCR_BASE="ghcr.io/${OWNER}/${REPO}/market-data-service"
+          echo "ghcr_base=${GHCR_BASE}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_sha=${GHCR_BASE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_latest=${GHCR_BASE}:latest" >> "$GITHUB_OUTPUT"
+          # Build a multi-line tag list. ACR tags are conditional on the
+          # ACR_LOGIN_SERVER secret being set.
+          {
+            echo "all_tags<<EOF"
+            echo "${GHCR_BASE}:${GITHUB_SHA}"
+            echo "${GHCR_BASE}:latest"
+            if [ -n "${ACR_LOGIN_SERVER}" ]; then
+              echo "${ACR_LOGIN_SERVER}/market-data-service:${GITHUB_SHA}"
+              echo "${ACR_LOGIN_SERVER}/market-data-service:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build + push image
         uses: docker/build-push-action@v6
@@ -143,16 +178,14 @@ jobs:
           context: services/market-data-service
           file: services/market-data-service/src/main/docker/Dockerfile.jvm
           push: true
-          tags: |
-            ${{ steps.tags.outputs.sha }}
-            ${{ steps.tags.outputs.latest }}
+          tags: ${{ steps.tags.outputs.all_tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Trivy scan image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ steps.tags.outputs.sha }}
+          image-ref: ${{ steps.tags.outputs.ghcr_sha }}
           severity: HIGH,CRITICAL
           exit-code: 0   # Phase 1: report only. Phase 7 flips to 1.
           ignore-unfixed: true

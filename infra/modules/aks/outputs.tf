@@ -32,3 +32,8 @@ output "kubelet_object_id" {
   description = "Object ID of the kubelet managed identity — grant Key Vault Secrets User if pods need direct KV access."
   value       = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
 }
+
+output "kubelet_client_id" {
+  description = "Client ID of the kubelet managed identity — used by the Azure Key Vault CSI driver / workload-identity binding (Phase 1; Phase 7 introduces a dedicated workload MI per service)."
+  value       = azurerm_kubernetes_cluster.main.kubelet_identity[0].client_id
+}

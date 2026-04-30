@@ -1,0 +1,103 @@
+# =============================================================================
+# Deploy market-data-service to the dev AKS cluster.
+# Triggers on push to main when service code OR chart OR this workflow changes;
+# also manually dispatchable. Runs after main.yml has pushed the SHA-tagged
+# image to ACR (the AKS-bound AcrPull role lets the kubelet pull without
+# imagePullSecrets).
+#
+# Required GitHub environment "dev" secrets (configure post-`terraform apply`):
+#   AZURE_CLIENT_ID                       — gha_client_id TF output
+#   AZURE_TENANT_ID                       — tenant_id TF output
+#   AZURE_SUBSCRIPTION_ID                 — `az account show --query id -o tsv`
+#   AKS_CLUSTER_NAME                      — aks_cluster_name TF output
+#   AKS_RESOURCE_GROUP                    — aks_resource_group TF output
+#   AKS_KUBELET_CLIENT_ID                 — aks_kubelet_client_id TF output
+#                                           (Phase 1 KV CSI client; Phase 7 swaps
+#                                           in a per-service workload MI)
+#   ACR_LOGIN_SERVER                      — acr_login_server TF output
+#   KEY_VAULT_NAME                        — key_vault_name TF output
+#   KEY_VAULT_URI                         — key_vault_uri TF output
+#   APPLICATIONINSIGHTS_CONNECTION_STRING — app_insights_connection_string TF
+#                                           output (sensitive)
+# Optional environment vars:
+#   AZURE_REGION                          — for OTel ingest URL (defaults eastus)
+# =============================================================================
+name: deploy-dev
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/market-data-service/**"
+      - "deploy/helm/market-data-service/**"
+      - ".github/workflows/deploy-dev.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC federation token for azure/login
+  contents: read
+
+concurrency:
+  # Serialize dev rollouts so we never have two helm upgrades fighting.
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy market-data-service to dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Install kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.1.4
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+          # AKS API server now requires AAD auth; convert kubeconfig from the
+          # interactive azurecli plugin to the non-interactive form so the
+          # OIDC token from azure/login is consumed without prompting.
+          kubelogin convert-kubeconfig -l azurecli
+
+      - name: Helm upgrade --install
+        env:
+          AZURE_REGION: ${{ vars.AZURE_REGION || 'eastus' }}
+        run: |
+          helm upgrade --install market-data-service deploy/helm/market-data-service \
+            --namespace market-data \
+            --create-namespace \
+            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/market-data-service" \
+            --set image.tag="${{ github.sha }}" \
+            --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
+            --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+            --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
+            --set keyVault.vaultUri="${{ secrets.KEY_VAULT_URI }}" \
+            --set env.OTEL_EXPORTER_OTLP_ENDPOINT="https://${AZURE_REGION}.in.applicationinsights.azure.com/v2.1/track" \
+            --wait \
+            --timeout 5m
+
+      - name: Verify rollout
+        run: |
+          kubectl -n market-data rollout status deployment/market-data-service --timeout=5m
+          kubectl -n market-data get pods,svc

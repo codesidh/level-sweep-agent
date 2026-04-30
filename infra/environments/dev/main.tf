@@ -160,6 +160,11 @@ output "aks_resource_group" {
   value       = module.aks.cluster_resource_group
 }
 
+output "aks_kubelet_client_id" {
+  description = "Client ID of the AKS kubelet managed identity — set as the AKS_KUBELET_CLIENT_ID GitHub secret. Phase 1 reuses this for the Key Vault CSI / workload-identity binding; Phase 7 swaps in a dedicated per-service MI."
+  value       = module.aks.kubelet_client_id
+}
+
 output "acr_login_server" {
   description = "ACR login server FQDN."
   value       = module.registry.acr_login_server

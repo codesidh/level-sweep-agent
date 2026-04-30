@@ -140,3 +140,43 @@ jobs:
             (cd "$d" && terraform init -backend=false && terraform validate)
             echo "::endgroup::"
           done
+
+  # ---------------------------------------------------------------------------
+  # Helm chart lint — catches templating bugs before deploy-dev.yml runs them
+  # against a real cluster. Cheap (~10s) so worth gating every PR.
+  # ---------------------------------------------------------------------------
+  helm:
+    name: helm lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: helm lint (market-data-service)
+        run: helm lint deploy/helm/market-data-service
+
+      - name: helm template (smoke render)
+        # Render with the same `--set` keys deploy-dev.yml passes, so a chart
+        # bug (missing required value, bad function call) surfaces here too.
+        run: |
+          helm template market-data-service deploy/helm/market-data-service \
+            --namespace market-data \
+            --set image.repository=acr.example.azurecr.io/market-data-service \
+            --set image.tag=ci-test \
+            --set workloadIdentity.clientId=00000000-0000-0000-0000-000000000000 \
+            --set keyVault.tenantId=11111111-1111-1111-1111-111111111111 \
+            --set keyVault.name=kv-example \
+            --set keyVault.vaultUri=https://kv-example.vault.azure.net/ \
+            > /tmp/rendered.yaml
+          # Sanity-check the render produced the four expected kinds.
+          for kind in Deployment Service ServiceAccount SecretProviderClass NetworkPolicy PodDisruptionBudget; do
+            if ! grep -q "^kind: ${kind}$" /tmp/rendered.yaml; then
+              echo "::error::helm template did not produce a ${kind} resource"
+              exit 1
+            fi
+          done

@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "market-data-service.fullname" . }}
+  labels:
+    {{- include "market-data-service.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "market-data-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Phase 1 single replica — surge by one so a new pod is up before the
+      # old one terminates. PDB still enforces minAvailable: 1 against
+      # voluntary disruption.
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "market-data-service.selectorLabels" . | nindent 8 }}
+        {{- if .Values.workloadIdentity.enabled }}
+        # Required for the Azure Workload Identity webhook to inject the
+        # projected SA token + AZURE_* env into the pod.
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "market-data-service.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: market-data-service
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- if .Values.keyVault.enabled }}
+            {{- range .Values.keyVault.objects }}
+            {{- if .env }}
+            - name: {{ .env }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-%s" (include "market-data-service.fullname" $) .name | trunc 63 | trimSuffix "-" }}
+                  key: {{ .name }}
+                  optional: {{ default false .optional }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+          volumeMounts:
+            # Quarkus + Flyway need a writable scratch dir; readOnlyRootFilesystem
+            # blocks /tmp by default.
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.keyVault.enabled }}
+            - name: kv-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.readiness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 100
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.keyVault.enabled }}
+        - name: kv-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "market-data-service.fullname" . }}-kv
+        {{- end }}
