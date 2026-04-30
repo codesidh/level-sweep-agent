@@ -52,13 +52,15 @@ public final class DataLayerPipeline {
         this.capturedBars = new ArrayList<>();
         this.capturedSnapshots = new ArrayList<>();
         this.capturedQuotes = new ArrayList<>();
+        // Initialize indicators first so the bar fanout lambda below can reference it as
+        // a definitely-assigned final field (Java's definite-assignment rules don't track
+        // lambda captures across out-of-order constructor assignments).
+        Consumer<IndicatorSnapshot> snapSink = capturedSnapshots::add;
+        this.indicators = new IndicatorEngine(symbol, snapSink);
         BarListener barFanout = bar -> {
             capturedBars.add(bar);
             indicators.onBar(bar);
         };
-        // Quote forwarding captured for the trailing manager (Phase 3) tests.
-        Consumer<IndicatorSnapshot> snapSink = capturedSnapshots::add;
-        this.indicators = new IndicatorEngine(symbol, snapSink);
         this.aggregator = new BarAggregator(
                 symbol,
                 zone,
