@@ -66,7 +66,9 @@ public class MetricsBinding {
     void register() {
         // ConnectionState ordinal — HEALTHY=0, DEGRADED=1, UNHEALTHY=2, RECOVERING=3.
         // Phase 1 alert "Alpaca WS CB open" fires when this == 2 sustained for 1 minute.
-        Gauge.builder("connection.state", pipeline, p -> p.connectionMonitor().state().ordinal())
+        Gauge.builder("connection.state", pipeline, p -> p.connectionMonitor()
+                        .state()
+                        .ordinal())
                 .description("Connection FSM ordinal — 0=HEALTHY, 1=DEGRADED, 2=UNHEALTHY, 3=RECOVERING")
                 .tags(Tags.of("dependency", DEPENDENCY_ALPACA_WS))
                 .register(registry);
@@ -85,13 +87,13 @@ public class MetricsBinding {
         // rate over the bin window. FunctionCounter is the right tool because
         // the underlying counter (TickRingBuffer#droppedCount) is a long the
         // buffer manages itself.
-        FunctionCounter.builder(
-                        "tick.dropped.total", pipeline, p -> (double) p.tickRingBuffer().droppedCount())
+        FunctionCounter.builder("tick.dropped.total", pipeline, p ->
+                        (double) p.tickRingBuffer().droppedCount())
                 .description("Total ticks dropped by the ring buffer (drop-oldest on overflow)")
                 .register(registry);
 
-        FunctionCounter.builder(
-                        "tick.offered.total", pipeline, p -> (double) p.tickRingBuffer().offeredCount())
+        FunctionCounter.builder("tick.offered.total", pipeline, p ->
+                        (double) p.tickRingBuffer().offeredCount())
                 .description("Total ticks offered to the ring buffer")
                 .register(registry);
 
