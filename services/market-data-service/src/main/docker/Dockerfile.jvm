@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# market-data-service — JVM-mode (Quarkus fast-jar) container.
+# Native-image build is a Phase 7 task per architecture-spec §15.
+# =============================================================================
+FROM eclipse-temurin:21-jre-alpine AS runtime
+
+# Run as non-root (matches the AKS pod-security-standard "restricted" profile
+# we'll target in S7).
+RUN addgroup -S app && adduser -S app -G app -h /work
+WORKDIR /work
+USER app
+
+# Quarkus fast-jar layout. Copy in cache-friendly order:
+#   lib/             — most stable (BOM-managed dep set)
+#   quarkus/         — Quarkus runtime stitching (changes when Quarkus version moves)
+#   app/             — app classes (rebuild on every code change)
+#   quarkus-run.jar  — root entrypoint
+COPY --chown=app:app build/quarkus-app/lib/             /work/lib/
+COPY --chown=app:app build/quarkus-app/quarkus/         /work/quarkus/
+COPY --chown=app:app build/quarkus-app/app/             /work/app/
+COPY --chown=app:app build/quarkus-app/quarkus-run.jar  /work/quarkus-run.jar
+
+EXPOSE 8081
+
+# JAVA_OPTS_APPEND lets the operator add flags (e.g., GC tuning) without rebuilding.
+ENV LANG=C.UTF-8 \
+    JAVA_OPTS_APPEND="-XX:+ExitOnOutOfMemoryError"
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS_APPEND -jar /work/quarkus-run.jar"]
