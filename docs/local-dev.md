@@ -26,8 +26,7 @@ cp .env.example .env
 ```
 
 Fill in real values for at least:
-- `POLYGON_API_KEY` — required to ingest market data (Phase 1+).
-- `ALPACA_KEY_ID` / `ALPACA_SECRET_KEY` — paper account is fine.
+- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` — Algo Trader Plus tier required for real-time SIP stocks WS + 0DTE options chain (Phase 1+); paper account for execution (Phase 3+) is fine.
 - `ANTHROPIC_API_KEY` — required for AI agents (Phase 4+).
 
 Phase 0 does not actually call any of these; placeholders are fine until Phase 1.
