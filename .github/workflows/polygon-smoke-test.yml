@@ -51,17 +51,42 @@ jobs:
       - name: Install ws + dotenv
         run: npm install --no-save ws
 
-      - name: Connect, auth, subscribe, log first messages
+      # ─────────────────────────────────────────────────────────────
+      # REST entitlement check — ground truth for what the plan covers.
+      # 200 + trade payload  →  real-time stocks entitlement is active
+      # 403 / NOT_AUTHORIZED →  plan doesn't include real-time stocks
+      # 401                  →  bad API key
+      # ─────────────────────────────────────────────────────────────
+      - name: REST diagnostic — /v2/last/trade/SPY (real-time entitlement)
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+        run: |
+          if [ -z "$POLYGON_API_KEY" ]; then
+            echo "::error::POLYGON_API_KEY secret not set on env scope"
+            exit 1
+          fi
+          echo "→ POST-redacted GET /v2/last/trade/SPY"
+          # Pipe through tee so we see body + status. Mask key on failure.
+          response=$(curl -sS -w "\n__HTTP__:%{http_code}\n" \
+            "https://api.polygon.io/v2/last/trade/SPY?apiKey=$POLYGON_API_KEY")
+          echo "$response" | sed 's/apiKey=[^&" ]*/apiKey=REDACTED/g'
+
+      - name: REST diagnostic — /v2/aggs daily (basic REST access)
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+        run: |
+          echo "→ GET /v2/aggs/ticker/SPY/range/1/day/2024-01-02/2024-01-02"
+          response=$(curl -sS -w "\n__HTTP__:%{http_code}\n" \
+            "https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day/2024-01-02/2024-01-02?apiKey=$POLYGON_API_KEY")
+          echo "$response" | sed 's/apiKey=[^&" ]*/apiKey=REDACTED/g'
+
+      - name: Connect, auth (wait), subscribe, log first messages
         env:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           WS_URL: ${{ inputs.ws_url }}
           TICKER: ${{ inputs.ticker }}
           DURATION_SEC: ${{ inputs.duration_sec }}
         run: |
-          if [ -z "$POLYGON_API_KEY" ]; then
-            echo "::error::POLYGON_API_KEY secret not set on repo or environment scope"
-            exit 1
-          fi
           node <<'EOF'
           const WebSocket = require('ws');
           const url = process.env.WS_URL;
@@ -89,11 +114,30 @@ jobs:
             process.exit(authStatus === 'auth_success' ? 0 : 1);
           }, duration);
 
+          // RACE FIX: wait for auth_success before sending subscribe.
+          // (Production PolygonStream.java assumes Polygon queues subscribe
+          // until auth completes, which the smoke test arrives 1ms-of-each-other
+          // pattern can't strictly disprove. Defensive: explicit wait.)
+          let authedSent = false;
+          let subbedSent = false;
           ws.on('open', () => {
             console.log('  ✓ socket open');
             ws.send(JSON.stringify({ action: 'auth', params: process.env.POLYGON_API_KEY }));
-            ws.send(JSON.stringify({ action: 'subscribe', params: `T.${ticker},Q.${ticker}` }));
+            authedSent = true;
           });
+          function trySubscribe() {
+            if (subbedSent) return;
+            subbedSent = true;
+            // Subscribe to multiple channel families so we can see which the
+            // current plan entitles. Each channel reports its own status.
+            //   T.<sym>  — trades                  (Stocks Starter +)
+            //   Q.<sym>  — NBBO quotes             (Stocks Starter +)
+            //   AM.<sym> — per-minute aggregates   (broadly available)
+            //   A.<sym>  — per-second aggregates   (Developer +)
+            const params = `T.${ticker},Q.${ticker},AM.${ticker},A.${ticker}`;
+            console.log(`  → subscribing to: ${params}`);
+            ws.send(JSON.stringify({ action: 'subscribe', params }));
+          }
 
           ws.on('message', (raw) => {
             const text = raw.toString();
@@ -106,7 +150,10 @@ jobs:
             for (const m of msgs) {
               if (m.ev === 'status') {
                 console.log(`  [status] ${m.status}: ${m.message || ''}`);
-                if (m.status === 'auth_success') authStatus = 'auth_success';
+                if (m.status === 'auth_success') {
+                  authStatus = 'auth_success';
+                  trySubscribe();
+                }
                 if (m.status === 'auth_failed' || m.status === 'auth_timeout') authStatus = m.status;
                 if (m.status === 'success' && /subscribed/i.test(m.message || '')) subStatus = 'subscribed';
               } else if (m.ev === 'T') {
@@ -120,6 +167,10 @@ jobs:
                 if (firstFew.length < 8 && quotes <= 3) {
                   console.log(`  [quote] ${m.sym} bid=${m.bp}@${m.bs} ask=${m.ap}@${m.as}`);
                 }
+              } else if (m.ev === 'AM') {
+                if (!global._amSeen) { global._amSeen = 1; console.log(`  [agg-min ✓] ${m.sym} c=${m.c} v=${m.v}`); }
+              } else if (m.ev === 'A') {
+                if (!global._aSeen) { global._aSeen = 1; console.log(`  [agg-sec ✓] ${m.sym} c=${m.c} v=${m.v}`); }
               }
             }
           });
