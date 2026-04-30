@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Bounded FIFO buffer for ticks. Drop-oldest on overflow.
  *
- * <p>Phase 1 — used by the Polygon adapter to absorb downstream slowness.
+ * <p>Phase 1 — used by the Alpaca adapter to absorb downstream slowness.
  * Per architecture-spec §9.1, the production deployment backs this with a
  * SQLite-on-disk ring (so a pod restart can resume from disk); Phase 1 ships
  * with the in-memory variant only and will swap implementations behind this

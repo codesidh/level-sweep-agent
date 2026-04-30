@@ -17,9 +17,10 @@ import java.util.Random;
  * for replay-harness testing. Uses a seeded {@link Random} so the same seed
  * produces byte-identical output across runs.
  *
- * <p>This is the Phase 1 surrogate for real Polygon recordings — once the
- * paid-tier subscription lands (issue #6), real recordings replace these
- * synthetic streams while the test fixtures stay identically structured.
+ * <p>This is the Phase 1 surrogate for real Alpaca SIP recordings — once
+ * live recordings are captured during the Phase 1 soak (architecture-spec
+ * §21.1), they replace these synthetic streams while the test fixtures
+ * stay identically structured.
  */
 public final class SyntheticSessionGenerator {
 

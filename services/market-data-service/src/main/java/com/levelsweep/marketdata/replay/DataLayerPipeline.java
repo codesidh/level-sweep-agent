@@ -1,5 +1,6 @@
 package com.levelsweep.marketdata.replay;
 
+import com.levelsweep.marketdata.api.TickListener;
 import com.levelsweep.marketdata.bars.BarAggregator;
 import com.levelsweep.marketdata.bars.BarListener;
 import com.levelsweep.marketdata.indicators.IndicatorEngine;
@@ -18,7 +19,7 @@ import java.util.function.Consumer;
 /**
  * Composes BarAggregator + IndicatorEngine into the Phase 1 data-layer
  * pipeline that the {@code replay-parity} skill requires. Used by the
- * replay harness for end-to-end testing without standing up Polygon WS.
+ * replay harness for end-to-end testing without standing up Alpaca WS.
  *
  * <p>Pipeline:
  *
@@ -66,7 +67,7 @@ public final class DataLayerPipeline {
                 zone,
                 List.of(Timeframe.ONE_MIN, Timeframe.TWO_MIN, Timeframe.FIFTEEN_MIN, Timeframe.DAILY),
                 barFanout,
-                new com.levelsweep.marketdata.polygon.TickListener() {
+                new TickListener() {
                     @Override
                     public void onTick(Tick tick) {
                         // not used (only quotes routed here)

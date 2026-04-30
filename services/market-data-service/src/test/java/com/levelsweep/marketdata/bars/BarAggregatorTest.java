@@ -2,7 +2,7 @@ package com.levelsweep.marketdata.bars;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.levelsweep.marketdata.polygon.TickListener;
+import com.levelsweep.marketdata.api.TickListener;
 import com.levelsweep.shared.domain.marketdata.Bar;
 import com.levelsweep.shared.domain.marketdata.Quote;
 import com.levelsweep.shared.domain.marketdata.Tick;

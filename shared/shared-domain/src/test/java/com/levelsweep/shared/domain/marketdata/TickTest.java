@@ -44,7 +44,7 @@ class TickTest {
 
     @Test
     void allowsZeroSize() {
-        // Polygon sometimes reports odd-lot prints with size 0
+        // Alpaca occasionally reports odd-lot prints with size 0
         Tick t = new Tick("SPY", BigDecimal.ONE, 0L, Instant.now());
         assertThat(t.size()).isZero();
     }

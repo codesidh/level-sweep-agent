@@ -1,6 +1,8 @@
-package com.levelsweep.marketdata.polygon;
+package com.levelsweep.marketdata.alpaca;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.levelsweep.marketdata.api.TickListener;
+import com.levelsweep.marketdata.api.WsTransport;
 import com.levelsweep.marketdata.buffer.TickRingBuffer;
 import com.levelsweep.marketdata.connection.ConnectionMonitor;
 import com.levelsweep.marketdata.connection.ConnectionState;
@@ -14,25 +16,28 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Top-level orchestrator for the Polygon WebSocket → tick-stream pipeline.
+ * Top-level orchestrator for the Alpaca WebSocket → tick-stream pipeline.
  *
  * <p>Composes:
  *
  * <ul>
  *   <li>{@link WsTransport} — pluggable transport (real WS in prod, stub in tests)
- *   <li>{@link PolygonMessageDecoder} — JSON parsing
+ *   <li>{@link AlpacaMessageDecoder} — JSON parsing
  *   <li>{@link ConnectionMonitor} — Connection FSM tracker
  *   <li>{@link TickRingBuffer} — backpressure absorption
- *   <li>{@link TickListener} — caller-supplied sink (the bar aggregator in #11)
+ *   <li>{@link TickListener} — caller-supplied sink (the bar aggregator subscribes)
  * </ul>
  *
- * <p>Lifecycle:
+ * <p>Lifecycle (per {@code .claude/skills/alpaca-trading-api/SKILL.md}):
  *
  * <ol>
- *   <li>Caller invokes {@link #start()} — opens transport, sends auth, then subscribe
- *   <li>Inbound frames are decoded; ticks land in the buffer AND are dispatched
- *       synchronously to the listener (for low-latency consumers; the buffer
- *       absorbs slowness if the listener stalls)
+ *   <li>Caller invokes {@link #start()} — opens transport
+ *   <li>On socket open, send auth message {@code {action,key,secret}}
+ *   <li>WAIT for {@code success: authenticated} status before sending subscribe
+ *       (Alpaca server may reject premature subscribe)
+ *   <li>Send subscribe message: {@code {action,trades,quotes,bars}}
+ *   <li>Inbound trade/quote frames are decoded; ticks land in the buffer AND
+ *       are dispatched synchronously to the listener
  *   <li>{@link #stop()} closes the transport cleanly
  * </ol>
  *
@@ -40,19 +45,22 @@ import org.slf4j.LoggerFactory;
  * Connection FSM state via {@link #connectionState()} so an outer supervisor
  * can decide when to re-create and re-{@link #start()}.
  */
-public final class PolygonStream {
+public final class AlpacaStream {
 
-    private static final Logger LOG = LoggerFactory.getLogger(PolygonStream.class);
+    private static final Logger LOG = LoggerFactory.getLogger(AlpacaStream.class);
 
     private final WsTransport transport;
-    private final PolygonMessageDecoder decoder;
+    private final AlpacaMessageDecoder decoder;
     private final ConnectionMonitor monitor;
     private final TickRingBuffer buffer;
     private final TickListener listener;
     private final List<String> symbols;
     private final String apiKey;
+    private final String secretKey;
+    private volatile boolean authSent;
+    private volatile boolean subscribeSent;
 
-    private PolygonStream(Builder b) {
+    private AlpacaStream(Builder b) {
         this.transport = Objects.requireNonNull(b.transport, "transport");
         this.decoder = Objects.requireNonNull(b.decoder, "decoder");
         this.monitor = Objects.requireNonNull(b.monitor, "monitor");
@@ -60,6 +68,7 @@ public final class PolygonStream {
         this.listener = Objects.requireNonNull(b.listener, "listener");
         this.symbols = Objects.requireNonNull(b.symbols, "symbols");
         this.apiKey = b.apiKey == null ? "" : b.apiKey;
+        this.secretKey = b.secretKey == null ? "" : b.secretKey;
     }
 
     public static Builder builder() {
@@ -67,7 +76,9 @@ public final class PolygonStream {
     }
 
     public CompletionStage<Void> start() {
-        return transport.connect().thenCompose(unused -> sendHandshake());
+        // Connect; the transport's onOpen callback (wired via createTransportListener
+        // below) sends the auth frame. Subscribe waits for auth_success.
+        return transport.connect();
     }
 
     public CompletionStage<Void> stop() {
@@ -80,6 +91,10 @@ public final class PolygonStream {
 
     public TickRingBuffer buffer() {
         return buffer;
+    }
+
+    public ConnectionMonitor monitor() {
+        return monitor;
     }
 
     /** Internal listener that decoder dispatches into. Wraps caller listener and buffer. */
@@ -105,10 +120,16 @@ public final class PolygonStream {
 
         @Override
         public void onStatus(String status, String message) {
-            // Polygon emits status frames for auth_success / subscription confirmations.
-            // We treat any explicit error status as a Connection FSM error.
-            if (status != null && status.toLowerCase().contains("error")) {
-                monitor.recordError(new RuntimeException("polygon status error: " + message));
+            // Alpaca status flow:
+            //   success: connected     -> server greeted us
+            //   success: authenticated -> auth committed; safe to subscribe
+            //   subscription:...       -> subscribe acknowledged
+            //   error: ...             -> Connection FSM error
+            if ("success".equals(status) && "authenticated".equals(message) && !subscribeSent) {
+                subscribeSent = true;
+                sendSubscribe();
+            } else if ("error".equals(status)) {
+                monitor.recordError(new RuntimeException("alpaca status error: " + message));
             }
             listener.onStatus(status, message);
         }
@@ -121,6 +142,10 @@ public final class PolygonStream {
             @Override
             public void onOpen() {
                 monitor.recordSuccess();
+                if (!authSent) {
+                    authSent = true;
+                    sendAuth();
+                }
             }
 
             @Override
@@ -137,36 +162,70 @@ public final class PolygonStream {
             @Override
             public void onClose(int code, String reason) {
                 LOG.info("ws closed: code={} reason={}", code, reason);
+                authSent = false;
+                subscribeSent = false;
             }
         };
     }
 
-    private CompletionStage<Void> sendHandshake() {
-        // Polygon expects: auth → wait for auth_success → subscribe.
-        // We send subscribe immediately after auth without waiting; Polygon queues
-        // the subscribe until auth completes server-side and answers in order.
-        String auth = String.format("{\"action\":\"auth\",\"params\":\"%s\"}", apiKey);
-        String subscribeParams =
-                String.join(",", symbols.stream().map(s -> "T." + s + ",Q." + s).toList());
-        String subscribe = String.format("{\"action\":\"subscribe\",\"params\":\"%s\"}", subscribeParams);
-        return transport.send(auth).thenCompose(u -> transport.send(subscribe));
+    private void sendAuth() {
+        // Alpaca auth: {"action":"auth","key":"<key>","secret":"<secret>"}
+        String escapedKey = jsonEscape(apiKey);
+        String escapedSecret = jsonEscape(secretKey);
+        String auth = "{\"action\":\"auth\",\"key\":\"" + escapedKey + "\",\"secret\":\"" + escapedSecret + "\"}";
+        transport.send(auth)
+                .exceptionally(t -> {
+                    LOG.warn("send auth failed", t);
+                    return null;
+                });
+    }
+
+    private void sendSubscribe() {
+        // Alpaca subscribe: {"action":"subscribe","trades":["SPY"],"quotes":["SPY"],"bars":["SPY"]}
+        StringBuilder sb = new StringBuilder("{\"action\":\"subscribe\",\"trades\":[");
+        appendQuotedCsv(sb, symbols);
+        sb.append("],\"quotes\":[");
+        appendQuotedCsv(sb, symbols);
+        sb.append("],\"bars\":[");
+        appendQuotedCsv(sb, symbols);
+        sb.append("]}");
+        transport.send(sb.toString())
+                .exceptionally(t -> {
+                    LOG.warn("send subscribe failed", t);
+                    return null;
+                });
+    }
+
+    private static void appendQuotedCsv(StringBuilder sb, List<String> items) {
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append('"').append(jsonEscape(items.get(i))).append('"');
+        }
+    }
+
+    private static String jsonEscape(String s) {
+        // Symbols and API keys are ASCII alphanumeric; basic escape for safety.
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     public static final class Builder {
         private WsTransport transport;
-        private PolygonMessageDecoder decoder;
+        private AlpacaMessageDecoder decoder;
         private ConnectionMonitor monitor;
         private TickRingBuffer buffer;
         private TickListener listener;
         private List<String> symbols;
         private String apiKey;
+        private String secretKey;
 
         public Builder transport(WsTransport t) {
             this.transport = t;
             return this;
         }
 
-        public Builder decoder(PolygonMessageDecoder d) {
+        public Builder decoder(AlpacaMessageDecoder d) {
             this.decoder = d;
             return this;
         }
@@ -196,41 +255,34 @@ public final class PolygonStream {
             return this;
         }
 
-        public PolygonStream build() {
+        public Builder secretKey(String secret) {
+            this.secretKey = secret;
+            return this;
+        }
+
+        public AlpacaStream build() {
             if (decoder == null) {
-                decoder = new PolygonMessageDecoder(new ObjectMapper());
+                decoder = new AlpacaMessageDecoder(new ObjectMapper());
             }
-            return new PolygonStream(this);
+            return new AlpacaStream(this);
         }
     }
 
-    /** Small helper used by callers in unit tests. */
     public static Duration defaultConnectTimeout() {
         return Duration.ofSeconds(5);
     }
 
-    /** Convenience for tests that need a no-op listener. */
     public static TickListener noopListener() {
         return new TickListener() {
             @Override
-            public void onTick(Tick tick) {
-                // no-op
-            }
+            public void onTick(Tick tick) {}
 
             @Override
-            public void onQuote(Quote quote) {
-                // no-op
-            }
+            public void onQuote(Quote quote) {}
         };
     }
 
-    /** Synchronous future helper for tests. */
     public static <T> T await(CompletionStage<T> stage) {
         return stage.toCompletableFuture().join();
-    }
-
-    /** Used by a future Phase 7 reconnect supervisor. */
-    public ConnectionMonitor monitor() {
-        return monitor;
     }
 }

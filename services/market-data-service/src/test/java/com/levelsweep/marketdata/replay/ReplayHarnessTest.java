@@ -31,8 +31,8 @@ import org.junit.jupiter.api.Test;
  * </ol>
  *
  * <p>Synthetic data is generated with a seeded RNG so all tests are
- * deterministic. Once the Polygon paid tier lands (issue #6), real
- * recordings replace these synthetic streams.
+ * deterministic. Once Alpaca SIP-recorded sessions are captured during the
+ * Phase 1 soak, real recordings replace these synthetic streams.
  */
 class ReplayHarnessTest {
 

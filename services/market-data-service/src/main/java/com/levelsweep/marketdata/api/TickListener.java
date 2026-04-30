@@ -1,13 +1,15 @@
-package com.levelsweep.marketdata.polygon;
+package com.levelsweep.marketdata.api;
 
 import com.levelsweep.shared.domain.marketdata.Quote;
 import com.levelsweep.shared.domain.marketdata.Tick;
 
 /**
- * Sink interface implemented by downstream consumers (the bar aggregator in
- * Phase 1 issue #11 will be the first). Decouples the WebSocket transport
- * from message processing — tests substitute a recording listener instead
- * of standing up a WS server.
+ * Provider-agnostic sink for market data events. Implementations subscribe
+ * to (a) trade ticks for the bar aggregator and (b) NBBO quotes for the
+ * trail manager (Phase 3).
+ *
+ * <p>Decouples the WebSocket transport from message processing — tests
+ * substitute a recording listener instead of standing up a WS server.
  */
 public interface TickListener {
 
