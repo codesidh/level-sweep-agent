@@ -31,6 +31,11 @@ quarkus:
       prometheus:
         enabled: true
         path: /q/metrics
+  # SmallRye Health — liveness/readiness endpoints exposed to AKS probes.
+  # Default root-path is already /q/health; declared explicitly so future
+  # operators see it documented (architecture-spec §17.4 + §21.1).
+  smallrye-health:
+    root-path: /q/health
 
 # Kafka topics consumed/produced — see architecture-spec §12.1
 kafka:
