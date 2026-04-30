@@ -1,0 +1,126 @@
+# =============================================================================
+# Polygon / Massive WebSocket smoke test.
+# Manual-trigger only. Uses POLY_API_KEY repo secret to verify the live WS
+# subscription end-to-end without committing any service deploy.
+#
+# Trigger from the UI: Actions → polygon-smoke-test → Run workflow
+# Or:    gh workflow run polygon-smoke-test.yml -R codesidh/level-sweep-agent
+# =============================================================================
+name: polygon-smoke-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      ws_url:
+        description: "WebSocket URL (legacy polygon.io endpoint or massive.com if rebranded)"
+        required: true
+        default: "wss://socket.polygon.io/stocks"
+        type: string
+      ticker:
+        description: "Symbol to subscribe (T.<sym> + Q.<sym>)"
+        required: true
+        default: "SPY"
+        type: string
+      duration_sec:
+        description: "Listen duration in seconds"
+        required: true
+        default: "30"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: ws-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install ws + dotenv
+        run: npm install --no-save ws
+
+      - name: Connect, auth, subscribe, log first messages
+        env:
+          POLY_API_KEY: ${{ secrets.POLY_API_KEY }}
+          WS_URL: ${{ inputs.ws_url }}
+          TICKER: ${{ inputs.ticker }}
+          DURATION_SEC: ${{ inputs.duration_sec }}
+        run: |
+          if [ -z "$POLY_API_KEY" ]; then
+            echo "::error::POLY_API_KEY secret not set on repo or environment scope"
+            exit 1
+          fi
+          node <<'EOF'
+          const WebSocket = require('ws');
+          const url = process.env.WS_URL;
+          const ticker = process.env.TICKER;
+          const duration = parseInt(process.env.DURATION_SEC, 10) * 1000;
+
+          console.log(`→ connecting to ${url}`);
+          const ws = new WebSocket(url);
+
+          let authStatus = null;
+          let subStatus = null;
+          let trades = 0;
+          let quotes = 0;
+          let firstFew = [];
+
+          const startedAt = Date.now();
+          const timer = setTimeout(() => {
+            console.log(`\n=== SUMMARY (${(duration/1000)|0}s) ===`);
+            console.log(`auth status:      ${authStatus}`);
+            console.log(`subscribe status: ${subStatus}`);
+            console.log(`trades received:  ${trades}`);
+            console.log(`quotes received:  ${quotes}`);
+            console.log(`elapsed (ms):     ${Date.now() - startedAt}`);
+            try { ws.close(); } catch (_) {}
+            process.exit(authStatus === 'auth_success' ? 0 : 1);
+          }, duration);
+
+          ws.on('open', () => {
+            console.log('  ✓ socket open');
+            ws.send(JSON.stringify({ action: 'auth', params: process.env.POLY_API_KEY }));
+            ws.send(JSON.stringify({ action: 'subscribe', params: `T.${ticker},Q.${ticker}` }));
+          });
+
+          ws.on('message', (raw) => {
+            const text = raw.toString();
+            let msgs;
+            try { msgs = JSON.parse(text); } catch (e) {
+              console.log(`unparseable: ${text.substring(0, 200)}`);
+              return;
+            }
+            if (!Array.isArray(msgs)) msgs = [msgs];
+            for (const m of msgs) {
+              if (m.ev === 'status') {
+                console.log(`  [status] ${m.status}: ${m.message || ''}`);
+                if (m.status === 'auth_success') authStatus = 'auth_success';
+                if (m.status === 'auth_failed' || m.status === 'auth_timeout') authStatus = m.status;
+                if (m.status === 'success' && /subscribed/i.test(m.message || '')) subStatus = 'subscribed';
+              } else if (m.ev === 'T') {
+                trades++;
+                if (firstFew.length < 5) {
+                  firstFew.push(m);
+                  console.log(`  [trade #${trades}] ${m.sym} @ ${m.p} sz=${m.s} t=${new Date(m.t).toISOString()}`);
+                }
+              } else if (m.ev === 'Q') {
+                quotes++;
+                if (firstFew.length < 8 && quotes <= 3) {
+                  console.log(`  [quote] ${m.sym} bid=${m.bp}@${m.bs} ask=${m.ap}@${m.as}`);
+                }
+              }
+            }
+          });
+
+          ws.on('error', (e) => {
+            console.error(`::error::ws error: ${e.message}`);
+          });
+
+          ws.on('close', (code, reason) => {
+            console.log(`  ⤫ socket closed: code=${code} reason=${reason || '(none)'}`);
+          });
+          EOF
