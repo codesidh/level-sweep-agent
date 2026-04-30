@@ -33,12 +33,14 @@ class LivePipelineTest {
     @Test
     void blankApiKeySkipsWsButStartsDrainer() throws Exception {
         AlpacaConfig cfg = new StubConfig("");
-        LivePipeline pipeline = new LivePipeline(
-                cfg, new TickRingBuffer(1000), new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+        LivePipeline pipeline =
+                new LivePipeline(cfg, new TickRingBuffer(1000), new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
 
         pipeline.start(new StartupEvent());
 
-        assertThat(pipeline.wsAttached()).as("ws should not be attached when api key is blank").isFalse();
+        assertThat(pipeline.wsAttached())
+                .as("ws should not be attached when api key is blank")
+                .isFalse();
         assertThat(pipeline.tickRingBuffer().capacity()).isEqualTo(1000);
         assertThat(pipeline.barAggregator()).isNotNull();
         assertThat(pipeline.indicatorEngine()).isNotNull();
