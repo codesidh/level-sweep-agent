@@ -34,6 +34,12 @@ auth0Jwt              = "4.4.0"
 auth0Jwks             = "0.22.1"
 
 # --- AI / SDKs ---
+# anthropic: no first-party Java SDK on Maven Central (as of Phase 0). The
+#   ai-agent-service module currently does NOT pull this dep; Phase 4 chooses
+#   between LangChain4J, Spring AI, or a hand-rolled HTTP client.
+# alpaca: catalog kept at 1.6.0 historically but Maven Central only ships
+#   10.0.x (major-version jump). Phase 3 (Execution Service) decides whether
+#   to bump or replace.
 anthropic             = "0.7.0"
 alpaca                = "1.6.0"
 

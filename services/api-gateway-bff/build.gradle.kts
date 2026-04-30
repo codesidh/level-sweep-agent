@@ -7,10 +7,12 @@ plugins {
 }
 
 // Spring Cloud BOM is needed for spring-cloud-starter-gateway version resolution.
+// 2024.0.x line targets Spring Boot 3.3/3.4 (matches our 3.3.5).
+// 2023.0.x is for Spring Boot 3.2.x and would force a downgrade of Boot.
 // Phase 0 keeps the version literal here; promote to libs.versions.toml in Phase 6.
 configure<DependencyManagementExtension> {
     imports {
-        mavenBom("org.springframework.cloud:spring-cloud-dependencies:2023.0.3")
+        mavenBom("org.springframework.cloud:spring-cloud-dependencies:2024.0.1")
     }
 }
 

@@ -21,7 +21,11 @@ dependencies {
     implementation(libs.quarkus.mongodb.client)
     implementation(libs.quarkus.smallrye.fault.tolerance)
 
-    implementation(libs.anthropic.sdk)
+    // Anthropic Java SDK: no first-party SDK on Maven Central as of Phase 0.
+    // Phase 4 (AI Agent Service implementation) decides between LangChain4J's
+    // anthropic adapter, Spring AI's anthropic starter, or a hand-rolled
+    // HTTP client against the public REST API. Track in ADR before wiring.
+    // implementation(libs.anthropic.sdk)
 
     testImplementation(libs.quarkus.junit5)
     testImplementation(libs.quarkus.rest.assured)

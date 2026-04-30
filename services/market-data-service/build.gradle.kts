@@ -32,7 +32,7 @@ tasks.register("nativeBuild") {
     description = "TODO: enable Quarkus native compile in Phase 7."
     doLast {
         logger.lifecycle(
-            "[nativeBuild] stub — wire `./gradlew :services:market-data-service:build -Dquarkus.package.type=native` in Phase 7."
+            "[nativeBuild] stub — wire `./gradlew :services:market-data-service:build -Dquarkus.package.type=native` in Phase 7.",
         )
     }
 }
