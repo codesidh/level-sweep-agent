@@ -1,9 +1,11 @@
 # =============================================================================
 # Deploy market-data-service to the dev AKS cluster.
-# Triggers on push to main when service code OR chart OR this workflow changes;
-# also manually dispatchable. Runs after main.yml has pushed the SHA-tagged
-# image to ACR (the AKS-bound AcrPull role lets the kubelet pull without
-# imagePullSecrets).
+#
+# Trigger: workflow_run on a successful `main` workflow completion. This
+# guarantees the SHA-tagged image has been pushed to ACR before we attempt to
+# pull it from AKS. The previous `on: push` trigger raced main.yml's container
+# job and could schedule a deploy minutes before the image existed.
+# Manual `workflow_dispatch` is also supported.
 #
 # Required GitHub environment "dev" secrets (configure post-`terraform apply`):
 #   AZURE_CLIENT_ID                       — gha_client_id TF output
@@ -17,20 +19,20 @@
 #   ACR_LOGIN_SERVER                      — acr_login_server TF output
 #   KEY_VAULT_NAME                        — key_vault_name TF output
 #   KEY_VAULT_URI                         — key_vault_uri TF output
-#   APPLICATIONINSIGHTS_CONNECTION_STRING — app_insights_connection_string TF
-#                                           output (sensitive)
-# Optional environment vars:
-#   AZURE_REGION                          — for OTel ingest URL (defaults eastus)
+#
+# The App Insights connection string flows through Azure Key Vault rather than
+# a GitHub secret — it's stored as the `applicationinsights-connection-string`
+# KV secret and mounted into the pod via the CSI SecretProviderClass. The
+# App Insights Java agent (Dockerfile.jvm) reads
+# APPLICATIONINSIGHTS_CONNECTION_STRING at runtime and ships telemetry.
 # =============================================================================
 name: deploy-dev
 
 on:
-  push:
+  workflow_run:
+    workflows: [main]
+    types: [completed]
     branches: [main]
-    paths:
-      - "services/market-data-service/**"
-      - "deploy/helm/market-data-service/**"
-      - ".github/workflows/deploy-dev.yml"
   workflow_dispatch:
 
 permissions:
@@ -45,12 +47,20 @@ concurrency:
 jobs:
   deploy:
     name: deploy market-data-service to dev
+    # Gate on main.yml success when triggered by workflow_run. workflow_dispatch
+    # bypasses this check (operator confirmed by manual click).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
 
     steps:
+      # On workflow_run, checkout defaults to the default branch tip — pin to
+      # the head_sha that main.yml just built so the chart and the image are
+      # in lockstep.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -80,20 +90,31 @@ jobs:
           # OIDC token from azure/login is consumed without prompting.
           kubelogin convert-kubeconfig -l azurecli
 
+      # workflow_run does not check out the repo's head by default — it lands
+      # on the same SHA the triggering workflow ran against. For workflow_run
+      # triggers, prefer the workflow_run head_sha so the deployed image tag
+      # matches what main.yml just pushed. workflow_dispatch falls back to
+      # github.sha (the branch tip).
+      - name: Resolve image tag SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "value=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Helm upgrade --install
-        env:
-          AZURE_REGION: ${{ vars.AZURE_REGION || 'eastus' }}
         run: |
           helm upgrade --install market-data-service deploy/helm/market-data-service \
             --namespace market-data \
             --create-namespace \
             --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/market-data-service" \
-            --set image.tag="${{ github.sha }}" \
+            --set image.tag="${{ steps.sha.outputs.value }}" \
             --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
             --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
             --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
             --set keyVault.vaultUri="${{ secrets.KEY_VAULT_URI }}" \
-            --set env.OTEL_EXPORTER_OTLP_ENDPOINT="https://${AZURE_REGION}.in.applicationinsights.azure.com/v2.1/track" \
             --wait \
             --timeout 5m
 

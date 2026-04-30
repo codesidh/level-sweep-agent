@@ -75,6 +75,7 @@ module "observability" {
   environment = local.environment
   location    = var.location
   tags        = local.tags
+  alert_email = var.alert_email
 }
 
 module "keyvault" {
@@ -139,6 +140,12 @@ variable "tags" {
   description = "Extra tags."
   type        = map(string)
   default     = {}
+}
+
+variable "alert_email" {
+  description = "Email address that the Phase 1 alerts page when they fire. Set in terraform.tfvars (out of source control) — Phase 7 swaps in a Twilio webhook for SMS escalation."
+  type        = string
+  default     = ""
 }
 
 # -----------------------------------------------------------------------------

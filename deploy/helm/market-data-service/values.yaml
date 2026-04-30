@@ -45,8 +45,15 @@ env:
   MONGO_DB: "level_sweep"
   MSSQL_URL: "jdbc:sqlserver://mssql:1433;databaseName=level_sweep;encrypt=false"
   MSSQL_USER: "sa"
-  # Set by the deploy workflow from App Insights connection-string-derived
-  # ingest endpoint. Empty = OTel exporter disabled (dev-friendly default).
+  # Force the Quarkus profile to %prod so application.yml's
+  # `quarkus.opentelemetry.enabled: false` override kicks in. The App
+  # Insights Java agent (loaded as -javaagent in Dockerfile.jvm) owns the
+  # OTel pipeline in production; Quarkus' own OTel SDK is disabled to
+  # prevent double-emit + lifecycle races.
+  QUARKUS_PROFILE: "prod"
+  # Local-only OTel endpoint default. Unused in production because
+  # quarkus.opentelemetry.enabled is false under %prod, but kept so
+  # configuration shape matches dev / replay where Quarkus OTel is on.
   OTEL_EXPORTER_OTLP_ENDPOINT: ""
 
 # Workload identity binding (Azure AD federated → K8s ServiceAccount).
@@ -73,6 +80,10 @@ keyVault:
     - name: alpaca-secret-key
       type: secret
       env: ALPACA_SECRET_KEY
+    - name: applicationinsights-connection-string
+      type: secret
+      env: APPLICATIONINSIGHTS_CONNECTION_STRING
+      optional: true
     - name: mssql-password
       type: secret
       env: MSSQL_PASSWORD
