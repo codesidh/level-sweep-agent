@@ -123,18 +123,53 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # Step 2: REST snapshot — exposes NBBO + greeks if entitled
       # ─────────────────────────────────────────────────────────────
-      - name: REST — snapshot for selected contract
-        if: steps.contracts.outputs.selected_contract != ''
+      - name: REST — chain snapshot for underlying (NBBO + greeks for all contracts)
         env:
           K: ${{ secrets.ALPACA_API_KEY }}
           S: ${{ secrets.ALPACA_SECRET_KEY }}
+          U: ${{ inputs.underlying }}
           C: ${{ steps.contracts.outputs.selected_contract }}
         run: |
-          echo "→ GET /v1beta1/options/snapshots/$C"
-          curl -sS -w "\n__HTTP__:%{http_code}\n" \
+          # The /snapshots/{symbol} endpoint takes UNDERLYING only, not a
+          # contract symbol — earlier mistake. Returns the full chain with
+          # latestQuote / latestTrade / greeks per contract. We filter to
+          # our selected contract for visibility, but the Phase 2 strike
+          # selector will consume the full chain.
+          echo "→ GET /v1beta1/options/snapshots/$U (full chain)"
+          response=$(curl -sS -w "\n__HTTP__:%{http_code}\n" \
             -H "APCA-API-KEY-ID: $K" \
             -H "APCA-API-SECRET-KEY: $S" \
-            "https://data.alpaca.markets/v1beta1/options/snapshots/$C"
+            "https://data.alpaca.markets/v1beta1/options/snapshots/$U?limit=10")
+          status_code=$(echo "$response" | tail -1 | cut -d: -f2)
+          body=$(echo "$response" | head -n -1)
+          echo "HTTP $status_code"
+          echo "$body" | head -c 1500
+          echo ""
+
+          if [ "$status_code" = "200" ] && [ -n "$C" ]; then
+            echo ""
+            echo "→ filtered view for selected contract $C:"
+            echo "$body" | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              snaps = data.get('snapshots', {})
+              c = '$C'
+              if c in snaps:
+                  s = snaps[c]
+                  q = s.get('latestQuote') or {}
+                  t = s.get('latestTrade') or {}
+                  g = s.get('greeks') or {}
+                  print(f'  bid={q.get(\"bp\")} bidSize={q.get(\"bs\")} ask={q.get(\"ap\")} askSize={q.get(\"as\")}')
+                  print(f'  lastTrade p={t.get(\"p\")} s={t.get(\"s\")} t={t.get(\"t\")}')
+                  print(f'  greeks: delta={g.get(\"delta\")} gamma={g.get(\"gamma\")} theta={g.get(\"theta\")} iv={s.get(\"impliedVolatility\")}')
+              else:
+                  print(f'  (contract {c} not in returned snapshot — limit=10 returned other contracts)')
+                  print(f'  available: {list(snaps.keys())[:5]}')
+          except Exception as e:
+              print(f'  parse failed: {e}')
+          "
+          fi
 
       # ─────────────────────────────────────────────────────────────
       # Step 3: WS — subscribe to options trades + quotes
