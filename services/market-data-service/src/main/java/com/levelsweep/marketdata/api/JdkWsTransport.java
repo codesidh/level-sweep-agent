@@ -1,4 +1,4 @@
-package com.levelsweep.marketdata.polygon;
+package com.levelsweep.marketdata.api;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -14,11 +14,12 @@ import org.slf4j.LoggerFactory;
 
 /**
  * JDK 11+ {@code java.net.http.WebSocket} implementation of {@link WsTransport}.
+ * Provider-agnostic — works for any WebSocket-based market data feed.
  *
- * <p>Each WS frame Polygon sends may be split across multiple onText callbacks
- * (the {@code last} flag indicates the final fragment); we buffer fragments
- * and dispatch the full frame only when {@code last == true}. This is
- * the documented JDK behavior and we follow it exactly.
+ * <p>Each WS frame from the upstream may be split across multiple onText
+ * callbacks (the {@code last} flag indicates the final fragment); we buffer
+ * fragments and dispatch the full frame only when {@code last == true}. This
+ * is the documented JDK behavior and we follow it exactly.
  */
 public final class JdkWsTransport implements WsTransport {
 
@@ -104,7 +105,7 @@ public final class JdkWsTransport implements WsTransport {
 
         @Override
         public CompletionStage<?> onBinary(WebSocket webSocket, ByteBuffer data, boolean last) {
-            // Polygon does not send binary frames in the stocks cluster. Ignore.
+            // Alpaca sends only text frames for stocks WS. Ignore binary.
             webSocket.request(1);
             return null;
         }

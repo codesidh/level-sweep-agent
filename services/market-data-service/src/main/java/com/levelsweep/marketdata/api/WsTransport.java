@@ -1,16 +1,16 @@
-package com.levelsweep.marketdata.polygon;
+package com.levelsweep.marketdata.api;
 
 import java.util.concurrent.CompletionStage;
 
 /**
- * Abstraction over a WebSocket transport. Production uses the JDK 11+
- * {@link java.net.http.HttpClient.WebSocket} via {@link JdkWsTransport};
- * tests substitute a stub that emits canned frames.
+ * Provider-agnostic abstraction over a WebSocket transport. Production uses
+ * the JDK 11+ {@link java.net.http.HttpClient.WebSocket} via {@link JdkWsTransport};
+ * tests substitute stubs that emit canned frames.
  *
  * <p>Decoupling lets us unit-test the parsing + dispatch + Connection-FSM
  * logic without standing up an actual WebSocket server. End-to-end
- * verification against a real Polygon WS endpoint is deferred to integration
- * tests once the paid-tier subscription lands (issue #6).
+ * verification against a real provider WS endpoint runs in the per-phase
+ * soak environment per architecture-spec §21.1.
  */
 public interface WsTransport {
 

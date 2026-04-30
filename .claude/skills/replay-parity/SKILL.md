@@ -14,7 +14,7 @@ The Decision Engine must be deterministic. The replay harness is the contract.
 3. **Tolerances are documented**: P&L within ±2%, fill prices match, stop triggers match.
 4. **Determinism = no wall-clock dependencies in pure logic.** Always inject `Clock` for time. Never call `Instant.now()` directly in business logic.
 5. **No randomness in business logic.** If randomness is required (e.g., jitter), seed it deterministically per replay.
-6. **External calls in replay = mocked.** Anthropic, Polygon, Alpaca all replaced by recorded fixtures.
+6. **External calls in replay = mocked.** Anthropic and Alpaca (SIP WS, options REST, Trading API) all replaced by recorded fixtures.
 7. **Snapshot recording**: when a new edge case is found in production, record it and add to the replay set.
 8. **Failing replay blocks merge.** No exceptions.
 
@@ -39,7 +39,7 @@ public class IndicatorEngine {
 
 ## Adding a new replay session
 
-1. Record live session as Polygon snapshot + Alpaca fills + Anthropic responses
+1. Record live session as Alpaca SIP WS frames + Alpaca fills + Anthropic responses
 2. Drop into `src/test/resources/replay/{session-date}/`
 3. Add expected outcome to `expected.json`
 4. Run `./gradlew replayTest --tests *.NewSessionReplayTest`

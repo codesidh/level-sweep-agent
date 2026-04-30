@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Tracks the Connection FSM for a single external dependency.
  *
- * <p>Phase 1 — used by the Polygon WebSocket client. Same shape will be
+ * <p>Phase 1 — used by the Alpaca WebSocket client. Same shape will be
  * reused (verbatim or via a generic in shared-fsm) for Alpaca, Anthropic,
  * MS SQL, Mongo, and Kafka in later phases.
  *

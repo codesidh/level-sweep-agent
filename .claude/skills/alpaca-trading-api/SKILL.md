@@ -67,7 +67,7 @@ Phase 1 strike selector implementation will need to construct this.
 
 ## Real-time streams
 
-Subscribe shape (only WebSocket; not the same as Polygon's csv-string):
+Subscribe shape (Alpaca uses a JSON object with per-channel symbol arrays):
 
 ```json
 {
@@ -78,7 +78,7 @@ Subscribe shape (only WebSocket; not the same as Polygon's csv-string):
 }
 ```
 
-Incoming message envelopes use `T` field, NOT Polygon's `ev`:
+Incoming message envelopes use a `T` discriminator field:
 
 | Type | Shape |
 |---|---|

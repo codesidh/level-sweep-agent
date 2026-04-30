@@ -1,6 +1,6 @@
 package com.levelsweep.marketdata.bars;
 
-import com.levelsweep.marketdata.polygon.TickListener;
+import com.levelsweep.marketdata.api.TickListener;
 import com.levelsweep.shared.domain.marketdata.Quote;
 import com.levelsweep.shared.domain.marketdata.Tick;
 import com.levelsweep.shared.domain.marketdata.Timeframe;
@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  * pure and avoids ordering subtleties between cascades. The Indicator Engine
  * (#13) consumes whichever timeframe(s) it needs.
  *
- * <p>Quotes are forwarded to a separate {@link com.levelsweep.marketdata.polygon.TickListener}
+ * <p>Quotes are forwarded to a separate {@link com.levelsweep.marketdata.api.TickListener}
  * if registered (the trailing manager will subscribe in Phase 3). Quotes do
  * not contribute to bars.
  */

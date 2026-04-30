@@ -1,8 +1,10 @@
 # LevelSweepAgent — Architecture Specification
 
-**Version**: 2.3
+**Version**: 2.4
 **Companion to**: `requirements.md` v1.0
 **Status**: Locked for Phase A (single-tenant); Phase B gated on legal review
+
+**v2.4 changelog**: Alpaca is now the single market-data + execution provider (per ADR-0004). Polygon removed from the codebase. WS endpoint changes to `wss://stream.data.alpaca.markets/v2/sip` for stocks; options chain via REST `/v1beta1/options/snapshots/{underlying}`. Trail manager (Phase 3) uses 1s REST polling as a default; OPRA WS is a deferred upgrade if soak shows ratchet misses. Cost projection updated: ~$99/mo Alpaca Algo Trader Plus replaces ~$199/mo Polygon Stocks Advanced.
 
 **v2.3 changelog**: per-phase production-readiness gate (§21.1) — every phase ships to Azure dev, soaks ≥5 RTH sessions against live external deps, ships observability + alerts + runbook before the next phase can merge. Stage environment dropped from Phase A active CI matrix (kept in IaC skeleton for Phase B). Phase 8/9 simplified — most operational lift now happens in earlier phases.
 
@@ -307,7 +309,7 @@ The agent is positioned as a **strategy executor and explainer**, not an advisor
 │                                                                                  │
 │  ┌──────────────────┐   Strimzi Kafka topics    ┌──────────────────────────┐    │
 │  │ Market Data Svc  │── market.bars.{tf} ──────▶│   Decision Engine         │   │
-│  │ Polygon ingest   │   (key=symbol)            │  · Indicator Engine       │   │
+│  │ Alpaca ingest   │   (key=symbol)            │  · Indicator Engine       │   │
 │  │ Bar aggregation  │                           │  · Signal Engine (FSM)    │   │
 │  │ ATR/EMA stream   │                           │  · Risk Manager (FSM)     │   │
 │  └──────────────────┘                           │  · Strike Selector        │   │
@@ -378,13 +380,13 @@ Cross-cutting:
 ## 9. Service Specs (hot path)
 
 ### 9.1 Market Data Service
-- **Inputs**: Polygon WebSocket (trades, quotes), REST (historical), pre-market data feed
+- **Inputs**: Alpaca WebSocket (trades, quotes), REST (historical), pre-market data feed
 - **Responsibilities**: maintain WS with reconnect/backoff; build 1-min bars from ticks; aggregate to 2m/15m on aligned ET clock; compute ATR(14) on daily bars at 09:00 ET; publish bars to `market.bars.{tf}`
 - **Topics published**: `market.bars.1m`, `market.bars.2m`, `market.bars.15m`, `market.bars.daily`, `market.atr.daily`
 - **Partition key**: `symbol`
 - **Critical SLO**: bar publication ≤ 100ms post-close
-- **State**: stateless (replays from Polygon REST on cold start)
-- **Backpressure**: WS handler is non-blocking. Inbound ticks land in a 5-min SQLite ring buffer; Mongo `bars_raw` writes are async batched. If buffer fills (e.g., 09:29:30 ET FOMC burst at 50k+ ticks/sec), oldest non-canonical ticks are dropped with an alert; canonical 1-min OHLC reconstruction is available from Polygon REST as a backstop.
+- **State**: stateless (replays from Alpaca REST on cold start)
+- **Backpressure**: WS handler is non-blocking. Inbound ticks land in a 5-min SQLite ring buffer; Mongo `bars_raw` writes are async batched. If buffer fills (e.g., 09:29:30 ET FOMC burst at 50k+ ticks/sec), oldest non-canonical ticks are dropped with an alert; canonical 1-min OHLC reconstruction is available from Alpaca REST as a backstop.
 
 ### 9.2 Decision Engine
 - **Hosts** (in-process): Indicator Engine + Signal Engine + Risk Manager + Strike Selector + Trade Saga Orchestrator
@@ -488,7 +490,7 @@ SUBMITTED ─▶ ACCEPTED ─▶ PARTIAL_FILLED ─▶ FILLED
 OPENING ─▶ OPEN ─▶ CLOSING ─▶ CLOSED
 ```
 
-### 10.6 Connection FSM (per external dep: Polygon, Alpaca, Auth0, MS SQL, Mongo, Kafka, Anthropic)
+### 10.6 Connection FSM (per external dep: Alpaca WS, Alpaca REST, Auth0, MS SQL, Mongo, Kafka, Anthropic)
 ```
 HEALTHY ─[3 consec failures]─▶ DEGRADED ─[CB open]─▶ UNHEALTHY ─[half-open probe ok]─▶ RECOVERING ─▶ HEALTHY
 ```
@@ -728,7 +730,7 @@ AKS cluster (eastus)
 
 ### 16.3 Networking
 - AKS in private VNET; APIM in adjacent VNET via peering
-- Outbound to Polygon / Alpaca / Auth0 / Anthropic / Trading Economics via Azure NAT Gateway with deterministic egress IPs (Alpaca IP allowlist)
+- Outbound to Alpaca / Auth0 / Anthropic / Trading Economics via Azure NAT Gateway with deterministic egress IPs (Alpaca IP allowlist)
 - Private Endpoints for MS SQL, Mongo (Cosmos Mongo API), Key Vault
 
 ### 16.4 Auth flow
@@ -760,7 +762,7 @@ Dashboard "Connect Alpaca" ─▶ Alpaca authorize URL ─▶ user grants ─▶
 
 | External dep | CB threshold | Open behavior |
 |---|---|---|
-| Polygon WS | 3 errors / 30s | Fall back to REST polling; persists > 5min → halt |
+| Alpaca WS | 3 errors / 30s | Fall back to REST polling; persists > 5min → halt |
 | Alpaca REST | 3 errors / 30s | Halt new orders; alert |
 | Anthropic API | 5 errors / 60s | Sentinel default ALLOW; Narrator/Reviewer skip |
 | Auth0 | 5 errors / 60s | Reject new logins; existing JWTs continue |
@@ -770,7 +772,7 @@ Dashboard "Connect Alpaca" ─▶ Alpaca authorize URL ─▶ user grants ─▶
 
 ### 17.2 Bulkhead (thread-pool isolation)
 - **Per-tenant pools** in cold services
-- **Per-downstream pools** in hot services: Polygon-bound ≠ Alpaca-bound ≠ DB-bound ≠ Anthropic-bound
+- **Per-downstream pools** in hot services: Alpaca-WS-bound ≠ Alpaca-REST-bound ≠ DB-bound ≠ Anthropic-bound
 
 ### 17.3 Idempotency
 - Alpaca orders: `client_order_id = sha256(tenant_id|trade_id|action)`
@@ -798,7 +800,7 @@ Dashboard "Connect Alpaca" ─▶ Alpaca authorize URL ─▶ user grants ─▶
 - Risk budget consumption per tenant
 - CB state per dependency
 - Kafka consumer lag per topic
-- Polygon WS reconnect count
+- Alpaca WS reconnect count
 - Alpaca order success/failure rates
 - **AI metrics**: cost per tenant, latency P50/P99, veto rate, cache hit ratio, cost-cap breach count
 
@@ -820,8 +822,8 @@ Dashboard "Connect Alpaca" ─▶ Alpaca authorize URL ─▶ user grants ─▶
 |---|---|---|
 | Risk FSM HALTED | P1 | SMS + email |
 | Hot-path latency P99 > 500ms (excl. Sentinel) | P2 | Email |
-| Polygon CB open | P1 | SMS + email |
-| Alpaca CB open | P0 | SMS + email |
+| Alpaca WS CB open | P1 | SMS + email |
+| Alpaca REST CB open | P0 | SMS + email |
 | Anthropic CB open | P3 | email |
 | Mongo CB open | P3 | email |
 | Order fill timeout | P1 | SMS + email |
@@ -855,9 +857,9 @@ CI matrix or `setup-github-environments.sh` until Phase B prep.
 
 | Env | Purpose | Cluster | Data |
 |---|---|---|---|
-| `dev` | feature dev + per-phase soak | dedicated AKS small | live Polygon + Alpaca paper + live Anthropic (per phase rollout) |
-| `prod` | live trading (Phase A: owner-only) | dedicated AKS small | live Polygon + Alpaca live + live Anthropic |
-| `stage` *(Phase B only — dormant in Phase A)* | pre-prod | dedicated | live Polygon + Alpaca paper + live Anthropic |
+| `dev` | feature dev + per-phase soak | dedicated AKS small | Alpaca paper (data + execution) + live Anthropic (per phase rollout) |
+| `prod` | live trading (Phase A: owner-only) | dedicated AKS small | Alpaca live (data + execution) + live Anthropic |
+| `stage` *(Phase B only — dormant in Phase A)* | pre-prod | dedicated | Alpaca paper (data + execution) + live Anthropic |
 
 ---
 
@@ -899,8 +901,8 @@ code surprises us in production.
 | Phase | Deliverable | Code exit gate | Soak gate (per §21.1) |
 |---|---|---|---|
 | **0 — Scaffolding** | Multi-module Gradle, Terraform skeleton, GitHub Actions, Auth0 dev tenant, AKS dev cluster, MS SQL + Mongo + Strimzi Kafka provisioned | `make ci` green; empty containers deploy to dev AKS | Infrastructure provisioned in dev; CI/CD pipeline executes end-to-end on a no-op service; Key Vault + App Insights wired |
-| **1 — Data layer** | Market Data Service + bar aggregator + Level Calculator + Indicator Engine; replay harness | Replay parity ≥ 99% on 30 sessions | Live Polygon paid tier; 5 RTH session soak; metrics + 5 alerts + runbook |
-| **2 — Decision Engine** | Signal + Risk + Strike + Trade Saga + all FSMs (no Sentinel yet) | Hand-labeled days produce expected signals; FSM transitions persisted | 5 RTH sessions on live Polygon: signals fire on real data, hand-reviewed; Risk FSM transitions logged; saga step latencies under SLO |
+| **1 — Data layer** | Market Data Service + bar aggregator + Level Calculator + Indicator Engine; replay harness | Replay parity ≥ 99% on 30 sessions | Live Alpaca paid tier; 5 RTH session soak; metrics + 5 alerts + runbook |
+| **2 — Decision Engine** | Signal + Risk + Strike + Trade Saga + all FSMs (no Sentinel yet) | Hand-labeled days produce expected signals; FSM transitions persisted | 5 RTH sessions on live Alpaca: signals fire on real data, hand-reviewed; Risk FSM transitions logged; saga step latencies under SLO |
 | **3 — Execution (paper)** | Execution Service + Alpaca paper + stop watcher + trailing manager + EOD flatten | 5+ paper sessions match replay within ±2% | 5 RTH sessions of live paper trading: orders placed, stops fire correctly, EOD flatten reliable, no fills mismatched |
 | **4 — AI Agent (Narrator + Reviewer)** | AI Agent Service skeleton; Trade Narrator; Daily Reviewer | Narratives appear in journal; daily reports generated; cost cap honored | 5 RTH sessions: real Anthropic calls; cost tracked; narratives reviewed for advice-vs-execution framing; Reviewer reports landing nightly |
 | **5 — AI Agent (Sentinel + Assistant)** | Pre-Trade Sentinel with veto wired into Trade Saga; Conversational Assistant with read-only tools | Sentinel false-veto rate < 5%; Assistant answers 10 canonical questions correctly; **AI replay parity**: same recorded inputs produce identical Sentinel decisions across runs (deterministic via `temperature=0` + tool-use `tool_choice="tool"` forcing) | 5 RTH sessions: Sentinel veto loop on live signals; Assistant chat exercised by owner; veto-rate anomaly alert quiet |
@@ -938,21 +940,21 @@ button is held until soak is green.
 | Phase | Live external dep introduced |
 |---|---|
 | 0 | Azure (AKS, Key Vault, App Insights) |
-| 1 | Polygon paid tier (WS + REST) |
-| 2 | (none new — uses Polygon from Phase 1) |
-| 3 | Alpaca paper |
+| 1 | Alpaca SIP stocks WS + REST (paper account, paid Algo Trader Plus) |
+| 2 | Alpaca options chain via REST (`/v1beta1/options/...`) |
+| 3 | Alpaca Trading API for paper order placement |
 | 4 | Anthropic API (Narrator + Reviewer) |
 | 5 | (Sentinel + Assistant use same Anthropic) |
 | 6 | Auth0 |
 | 7 | Chaos engineering against all of the above |
-| 8 | Alpaca live |
+| 8 | Alpaca live (key swap; data + execution stay on same provider) |
 | 10 | Stripe (Phase B prep) |
 
 ### Alerts to ship per phase (cumulative)
 
 | Phase | New alerts |
 |---|---|
-| 1 | (a) no SPY ticks for 5 min during RTH (b) Polygon CB UNHEALTHY (c) bar emission lag P99 > 100ms (d) market-data-service container restart (e) ATR(14) stale > 1 trading day |
+| 1 | (a) no SPY ticks for 5 min during RTH (b) Alpaca WS CB UNHEALTHY (c) bar emission lag P99 > 100ms (d) market-data-service container restart (e) ATR(14) stale > 1 trading day |
 | 2 | (a) signal evaluation latency P99 > 50ms (b) Risk FSM HALTED (c) saga step timeout |
 | 3 | (a) Alpaca CB UNHEALTHY (b) order fill timeout (c) EOD flatten failure (d) trail manager NBBO snapshot stale |
 | 4 | (a) Anthropic CB UNHEALTHY (b) AI cost cap breached (c) narrator queue depth > 50 |

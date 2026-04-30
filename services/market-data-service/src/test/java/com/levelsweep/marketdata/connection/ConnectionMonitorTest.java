@@ -17,13 +17,13 @@ class ConnectionMonitorTest {
     @BeforeEach
     void setUp() {
         clock = new TestClock(Instant.parse("2026-04-30T13:30:00Z"));
-        monitor = new ConnectionMonitor("polygon", clock, Duration.ofSeconds(30), Duration.ofSeconds(15));
+        monitor = new ConnectionMonitor("alpaca", clock, Duration.ofSeconds(30), Duration.ofSeconds(15));
     }
 
     @Test
     void startsHealthy() {
         assertThat(monitor.state()).isEqualTo(ConnectionState.HEALTHY);
-        assertThat(monitor.dependency()).isEqualTo("polygon");
+        assertThat(monitor.dependency()).isEqualTo("alpaca");
         assertThat(monitor.shouldShortCircuit()).isFalse();
     }
 

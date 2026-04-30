@@ -79,7 +79,7 @@ public final class BarBuilder {
             // Tick belongs to a later bar — close the in-flight bar and start a new one.
             // Note: ticks arriving with timestamp < openTime are out-of-order; we drop them
             //       to preserve replay determinism (would require reordering). Out-of-order
-            //       arrivals from Polygon are extremely rare (sequence numbers within ms).
+            //       arrivals from Alpaca are extremely rare (server orders by exchange ts).
             if (barOpenInstant.isAfter(openTime)) {
                 emitted = Optional.of(closeInFlight());
                 openInFlight(barOpenInstant, barCloseInstant, tick);

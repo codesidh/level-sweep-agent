@@ -14,7 +14,7 @@ refactor/<short-slug>         ← code change without behavior change
 test/<short-slug>             ← test additions / improvements
 ```
 
-Examples: `feat/p1-polygon-adapter`, `fix/spotless-trailing-comma`, `chore/ci-trivy-bump`.
+Examples: `feat/p1-alpaca-marketdata`, `fix/spotless-trailing-comma`, `chore/ci-trivy-bump`.
 
 Always branch off `main` after `git pull --rebase`.
 

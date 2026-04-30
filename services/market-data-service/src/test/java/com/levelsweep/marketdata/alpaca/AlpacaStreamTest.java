@@ -1,8 +1,10 @@
-package com.levelsweep.marketdata.polygon;
+package com.levelsweep.marketdata.alpaca;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.levelsweep.marketdata.api.TickListener;
+import com.levelsweep.marketdata.api.WsTransport;
 import com.levelsweep.marketdata.buffer.TickRingBuffer;
 import com.levelsweep.marketdata.connection.ConnectionMonitor;
 import com.levelsweep.marketdata.connection.ConnectionState;
@@ -20,78 +22,112 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class PolygonStreamTest {
+class AlpacaStreamTest {
 
     private StubTransport transport;
     private TickRingBuffer buffer;
     private ConnectionMonitor monitor;
     private RecordingListener listener;
-    private PolygonStream stream;
+    private AlpacaStream stream;
 
     @BeforeEach
     void setUp() {
         transport = new StubTransport();
         buffer = new TickRingBuffer(1000);
         TestClock clock = new TestClock(Instant.parse("2026-04-30T13:30:00Z"));
-        monitor = new ConnectionMonitor("polygon", clock);
+        monitor = new ConnectionMonitor("alpaca", clock);
         listener = new RecordingListener();
-        stream = PolygonStream.builder()
+        stream = AlpacaStream.builder()
                 .transport(transport)
-                .decoder(new PolygonMessageDecoder(new ObjectMapper()))
+                .decoder(new AlpacaMessageDecoder(new ObjectMapper()))
                 .monitor(monitor)
                 .buffer(buffer)
                 .listener(listener)
                 .symbols(List.of("SPY"))
                 .apiKey("test-key")
+                .secretKey("test-secret")
                 .build();
-        // Wire transport listener
         transport.setListener(stream.createTransportListener());
     }
 
     @Test
-    void startSendsAuthThenSubscribe() {
-        PolygonStream.await(stream.start());
+    void onOpenSendsAuthFrame() {
+        AlpacaStream.await(stream.start());
         assertThat(transport.opened).isTrue();
-        assertThat(transport.sentFrames).hasSize(2);
+        // Auth fires from onOpen; subscribe waits for auth_success status
+        assertThat(transport.sentFrames).hasSize(1);
         assertThat(transport.sentFrames.get(0)).contains("\"action\":\"auth\"");
-        assertThat(transport.sentFrames.get(0)).contains("test-key");
+        assertThat(transport.sentFrames.get(0)).contains("\"key\":\"test-key\"");
+        assertThat(transport.sentFrames.get(0)).contains("\"secret\":\"test-secret\"");
+    }
+
+    @Test
+    void subscribeSentAfterAuthSuccess() {
+        AlpacaStream.await(stream.start());
+        // Simulate Alpaca's success: connected then success: authenticated
+        transport.deliver("[{\"T\":\"success\",\"msg\":\"connected\"}]");
+        transport.deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
+        // Now subscribe should have been sent
+        assertThat(transport.sentFrames).hasSize(2);
         assertThat(transport.sentFrames.get(1)).contains("\"action\":\"subscribe\"");
-        assertThat(transport.sentFrames.get(1)).contains("T.SPY,Q.SPY");
+        assertThat(transport.sentFrames.get(1)).contains("\"trades\":[\"SPY\"]");
+        assertThat(transport.sentFrames.get(1)).contains("\"quotes\":[\"SPY\"]");
+        assertThat(transport.sentFrames.get(1)).contains("\"bars\":[\"SPY\"]");
+    }
+
+    @Test
+    void subscribeNotSentBeforeAuthSuccess() {
+        AlpacaStream.await(stream.start());
+        // Some random non-success status arrives — should NOT trigger subscribe
+        transport.deliver("[{\"T\":\"success\",\"msg\":\"connected\"}]");
+        assertThat(transport.sentFrames).hasSize(1); // only auth
+    }
+
+    @Test
+    void subscribeSentAtMostOnce() {
+        AlpacaStream.await(stream.start());
+        transport.deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
+        // Re-deliver the same authenticated status — subscribe should not double-fire
+        transport.deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
+        long subFrames = transport.sentFrames.stream()
+                .filter(f -> f.contains("\"action\":\"subscribe\""))
+                .count();
+        assertThat(subFrames).isEqualTo(1L);
     }
 
     @Test
     void incomingTradeFrameLandsInBufferAndListener() {
-        PolygonStream.await(stream.start());
-        transport.deliver("[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]");
+        AlpacaStream.await(stream.start());
+        transport.deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
+        transport.deliver("[{\"T\":\"t\",\"S\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":\"2026-04-30T13:30:00Z\"}]");
         assertThat(listener.ticks).hasSize(1);
         assertThat(buffer.size()).isEqualTo(1);
     }
 
     @Test
     void incomingQuoteDoesNotPopulateBuffer() {
-        // The buffer is for ticks only; quotes go straight to the listener (Phase 3 trail uses them).
-        PolygonStream.await(stream.start());
+        AlpacaStream.await(stream.start());
+        transport.deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
         transport.deliver(
-                "[{\"ev\":\"Q\",\"sym\":\"SPY\",\"bp\":594.20,\"bs\":100,\"ap\":594.25,\"as\":200,\"t\":1714492800001}]");
+                "[{\"T\":\"q\",\"S\":\"SPY\",\"bp\":594.20,\"bs\":100,\"ap\":594.25,\"as\":200,\"t\":\"2026-04-30T13:30:00Z\"}]");
         assertThat(listener.quotes).hasSize(1);
         assertThat(buffer.size()).isZero();
     }
 
     @Test
     void onOpenMarksMonitorHealthy() {
-        // Pre-open, monitor starts HEALTHY but onOpen explicitly resets — verify by going DEGRADED then re-opening.
+        // Simulate degraded state then re-open
         for (int i = 0; i < 3; i++) {
             transport.failWith(new RuntimeException("transient " + i));
         }
         assertThat(monitor.state()).isEqualTo(ConnectionState.DEGRADED);
-        // Simulate reconnect — onOpen fires
         transport.fireOpen();
         assertThat(monitor.state()).isEqualTo(ConnectionState.HEALTHY);
     }
 
     @Test
     void transportErrorRecordsInMonitor() {
-        PolygonStream.await(stream.start());
+        AlpacaStream.await(stream.start());
         for (int i = 0; i < 5; i++) {
             transport.failWith(new RuntimeException("e" + i));
         }
@@ -99,10 +135,10 @@ class PolygonStreamTest {
     }
 
     @Test
-    void statusErrorIsTreatedAsConnectionError() {
-        PolygonStream.await(stream.start());
+    void errorStatusIsTreatedAsConnectionError() {
+        AlpacaStream.await(stream.start());
         for (int i = 0; i < 5; i++) {
-            transport.deliver("[{\"ev\":\"status\",\"status\":\"error\",\"message\":\"bad request " + i + "\"}]");
+            transport.deliver("[{\"T\":\"error\",\"code\":401,\"msg\":\"unauthorized " + i + "\"}]");
         }
         assertThat(monitor.state()).isEqualTo(ConnectionState.UNHEALTHY);
     }
@@ -120,28 +156,45 @@ class PolygonStreamTest {
                 // no-op
             }
         };
-        PolygonStream s2 = PolygonStream.builder()
+        AlpacaStream s2 = AlpacaStream.builder()
                 .transport(transport)
-                .decoder(new PolygonMessageDecoder(new ObjectMapper()))
+                .decoder(new AlpacaMessageDecoder(new ObjectMapper()))
                 .monitor(monitor)
                 .buffer(buffer)
                 .listener(exploding)
                 .symbols(List.of("SPY"))
                 .apiKey("test-key")
+                .secretKey("test-secret")
                 .build();
         transport.setListener(s2.createTransportListener());
-        PolygonStream.await(s2.start());
-        // Should not throw
-        transport.deliver("[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]");
+        AlpacaStream.await(s2.start());
+        transport.deliver("[{\"T\":\"t\",\"S\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":\"2026-04-30T13:30:00Z\"}]");
         // Buffer still received it
         assertThat(buffer.size()).isEqualTo(1);
     }
 
     @Test
     void stopClosesTransport() {
-        PolygonStream.await(stream.start());
-        PolygonStream.await(stream.stop());
+        AlpacaStream.await(stream.start());
+        AlpacaStream.await(stream.stop());
         assertThat(transport.closed).isTrue();
+    }
+
+    @Test
+    void buildsWithDefaultDecoder() {
+        AlpacaStream s = AlpacaStream.builder()
+                .transport(new StubTransport())
+                .monitor(new ConnectionMonitor("alpaca", Clock.systemUTC()))
+                .buffer(new TickRingBuffer(10))
+                .listener(AlpacaStream.noopListener())
+                .symbols(List.of("SPY"))
+                .apiKey("k")
+                .secretKey("s")
+                .build();
+        assertThat(s).isNotNull();
+        assertThat(s.connectionState()).isEqualTo(ConnectionState.HEALTHY);
+        assertThat(s.monitor().dependency()).isEqualTo("alpaca");
+        assertThat(AlpacaStream.defaultConnectTimeout()).isEqualTo(Duration.ofSeconds(5));
     }
 
     /** In-process test transport — no real WebSocket. */
@@ -212,22 +265,5 @@ class PolygonStreamTest {
         public void onQuote(Quote quote) {
             quotes.add(quote);
         }
-    }
-
-    @Test
-    void buildsWithDefaultDecoder() {
-        // Ensure builder works without explicitly providing a decoder
-        PolygonStream s = PolygonStream.builder()
-                .transport(new StubTransport())
-                .monitor(new ConnectionMonitor("polygon", Clock.systemUTC()))
-                .buffer(new TickRingBuffer(10))
-                .listener(PolygonStream.noopListener())
-                .symbols(List.of("SPY"))
-                .apiKey("k")
-                .build();
-        assertThat(s).isNotNull();
-        assertThat(s.connectionState()).isEqualTo(ConnectionState.HEALTHY);
-        assertThat(s.monitor().dependency()).isEqualTo("polygon");
-        assertThat(PolygonStream.defaultConnectTimeout()).isEqualTo(Duration.ofSeconds(5));
     }
 }

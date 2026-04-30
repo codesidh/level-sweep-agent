@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Market Data Service entry point.
  *
- * <p>Phase 0 placeholder. Phase 1 wires Polygon WebSocket ingest + bar aggregation per
+ * <p>Phase 0 placeholder. Phase 1 wires Alpaca WebSocket ingest + bar aggregation per
  * architecture-spec §9.1.
  */
 @QuarkusMain

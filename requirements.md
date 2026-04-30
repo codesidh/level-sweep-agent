@@ -237,13 +237,13 @@ Once halted by risk breach, the agent does not resume until the **next trading d
 
 | Feed | Provider | Use |
 |---|---|---|
-| SPY 1-min OHLCV (RTH + extended hours) | Polygon | Aggregated to 2-min and 15-min |
-| SPY daily bars | Polygon | ATR(14) computation |
-| SPY 0DTE option chain (real-time NBBO) | Polygon | Strike selection, fills, P&L |
+| SPY 1-min OHLCV (RTH + extended hours) | Alpaca SIP WS | Aggregated to 2-min and 15-min |
+| SPY daily bars | Alpaca REST | ATR(14) computation |
+| SPY 0DTE option chain (real-time NBBO) | Alpaca REST snapshot (1s polling) | Strike selection, fills, P&L |
 | Economic calendar | Trading Economics | News blackout filter |
-| Account state | Alpaca | Equity at 09:29 ET, position state, fills |
+| Account state | Alpaca Trading API | Equity at 09:29 ET, position state, fills |
 
-**Pre-market data assumption**: paid Polygon tier delivers complete 16:01 → 09:29 ET overnight data prior to 09:30 ET each session.
+**Pre-market data assumption**: paid Alpaca Algo Trader Plus (SIP) tier delivers complete 16:01 → 09:29 ET overnight data prior to 09:30 ET each session.
 
 ---
 
@@ -274,7 +274,7 @@ Once halted by risk breach, the agent does not resume until the **next trading d
 
 The build is considered complete when:
 
-1. Agent computes PDH/PDL/PMH/PML correctly from Polygon data each session
+1. Agent computes PDH/PDL/PMH/PML correctly from Alpaca SIP data each session
 2. Agent evaluates 15-min and 2-min charts in real time
 3. EMA stack and ATR-buffer rules match this spec exactly
 4. Entry, stop-loss, and trailing-stop logic execute on Alpaca paper account for ≥ 20 sessions without intervention
