@@ -35,16 +35,15 @@ class PolygonStreamTest {
         TestClock clock = new TestClock(Instant.parse("2026-04-30T13:30:00Z"));
         monitor = new ConnectionMonitor("polygon", clock);
         listener = new RecordingListener();
-        stream =
-                PolygonStream.builder()
-                        .transport(transport)
-                        .decoder(new PolygonMessageDecoder(new ObjectMapper()))
-                        .monitor(monitor)
-                        .buffer(buffer)
-                        .listener(listener)
-                        .symbols(List.of("SPY"))
-                        .apiKey("test-key")
-                        .build();
+        stream = PolygonStream.builder()
+                .transport(transport)
+                .decoder(new PolygonMessageDecoder(new ObjectMapper()))
+                .monitor(monitor)
+                .buffer(buffer)
+                .listener(listener)
+                .symbols(List.of("SPY"))
+                .apiKey("test-key")
+                .build();
         // Wire transport listener
         transport.setListener(stream.createTransportListener());
     }
@@ -63,8 +62,7 @@ class PolygonStreamTest {
     @Test
     void incomingTradeFrameLandsInBufferAndListener() {
         PolygonStream.await(stream.start());
-        transport.deliver(
-                "[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]");
+        transport.deliver("[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]");
         assertThat(listener.ticks).hasSize(1);
         assertThat(buffer.size()).isEqualTo(1);
     }
@@ -104,43 +102,37 @@ class PolygonStreamTest {
     void statusErrorIsTreatedAsConnectionError() {
         PolygonStream.await(stream.start());
         for (int i = 0; i < 5; i++) {
-            transport.deliver(
-                    "[{\"ev\":\"status\",\"status\":\"error\",\"message\":\"bad request "
-                            + i
-                            + "\"}]");
+            transport.deliver("[{\"ev\":\"status\",\"status\":\"error\",\"message\":\"bad request " + i + "\"}]");
         }
         assertThat(monitor.state()).isEqualTo(ConnectionState.UNHEALTHY);
     }
 
     @Test
     void downstreamListenerExceptionDoesNotBreakPipeline() {
-        TickListener exploding =
-                new TickListener() {
-                    @Override
-                    public void onTick(Tick tick) {
-                        throw new RuntimeException("kaboom");
-                    }
+        TickListener exploding = new TickListener() {
+            @Override
+            public void onTick(Tick tick) {
+                throw new RuntimeException("kaboom");
+            }
 
-                    @Override
-                    public void onQuote(Quote quote) {
-                        // no-op
-                    }
-                };
-        PolygonStream s2 =
-                PolygonStream.builder()
-                        .transport(transport)
-                        .decoder(new PolygonMessageDecoder(new ObjectMapper()))
-                        .monitor(monitor)
-                        .buffer(buffer)
-                        .listener(exploding)
-                        .symbols(List.of("SPY"))
-                        .apiKey("test-key")
-                        .build();
+            @Override
+            public void onQuote(Quote quote) {
+                // no-op
+            }
+        };
+        PolygonStream s2 = PolygonStream.builder()
+                .transport(transport)
+                .decoder(new PolygonMessageDecoder(new ObjectMapper()))
+                .monitor(monitor)
+                .buffer(buffer)
+                .listener(exploding)
+                .symbols(List.of("SPY"))
+                .apiKey("test-key")
+                .build();
         transport.setListener(s2.createTransportListener());
         PolygonStream.await(s2.start());
         // Should not throw
-        transport.deliver(
-                "[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]");
+        transport.deliver("[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]");
         // Buffer still received it
         assertThat(buffer.size()).isEqualTo(1);
     }
@@ -225,15 +217,14 @@ class PolygonStreamTest {
     @Test
     void buildsWithDefaultDecoder() {
         // Ensure builder works without explicitly providing a decoder
-        PolygonStream s =
-                PolygonStream.builder()
-                        .transport(new StubTransport())
-                        .monitor(new ConnectionMonitor("polygon", Clock.systemUTC()))
-                        .buffer(new TickRingBuffer(10))
-                        .listener(PolygonStream.noopListener())
-                        .symbols(List.of("SPY"))
-                        .apiKey("k")
-                        .build();
+        PolygonStream s = PolygonStream.builder()
+                .transport(new StubTransport())
+                .monitor(new ConnectionMonitor("polygon", Clock.systemUTC()))
+                .buffer(new TickRingBuffer(10))
+                .listener(PolygonStream.noopListener())
+                .symbols(List.of("SPY"))
+                .apiKey("k")
+                .build();
         assertThat(s).isNotNull();
         assertThat(s.connectionState()).isEqualTo(ConnectionState.HEALTHY);
         assertThat(s.monitor().dependency()).isEqualTo("polygon");

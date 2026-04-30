@@ -41,12 +41,10 @@ public final class JdkWsTransport implements WsTransport {
     @Override
     public CompletionStage<Void> connect() {
         WebSocket.Builder builder = http.newWebSocketBuilder().connectTimeout(connectTimeout);
-        return builder.buildAsync(endpoint, new InternalHandler())
-                .thenAccept(
-                        ws -> {
-                            this.webSocket = ws;
-                            listener.onOpen();
-                        });
+        return builder.buildAsync(endpoint, new InternalHandler()).thenAccept(ws -> {
+            this.webSocket = ws;
+            listener.onOpen();
+        });
     }
 
     @Override

@@ -46,11 +46,8 @@ public final class PolygonMessageDecoder {
         Objects.requireNonNull(listener, "listener");
         List<PolygonMessage> messages;
         try {
-            messages =
-                    json.readValue(
-                            frame,
-                            json.getTypeFactory()
-                                    .constructCollectionType(List.class, PolygonMessage.class));
+            messages = json.readValue(
+                    frame, json.getTypeFactory().constructCollectionType(List.class, PolygonMessage.class));
         } catch (JsonProcessingException e) {
             malformedCount++;
             LOG.warn("dropped malformed Polygon frame (count={}): {}", malformedCount, e.getOriginalMessage());
@@ -73,11 +70,7 @@ public final class PolygonMessageDecoder {
             // Other event types (A, AM, etc.) silently dropped per Phase 1 scope.
         } catch (Exception e) {
             malformedCount++;
-            LOG.warn(
-                    "dropped Polygon message (count={}, event={}): {}",
-                    malformedCount,
-                    m.event(),
-                    e.getMessage());
+            LOG.warn("dropped Polygon message (count={}, event={}): {}", malformedCount, m.event(), e.getMessage());
         }
     }
 
@@ -86,18 +79,11 @@ public final class PolygonMessageDecoder {
             throw new IllegalArgumentException("trade missing required fields");
         }
         long size = m.size() == null ? 0L : m.size();
-        return new Tick(
-                m.symbol(),
-                BigDecimal.valueOf(m.price()),
-                size,
-                Instant.ofEpochMilli(m.timestampMillis()));
+        return new Tick(m.symbol(), BigDecimal.valueOf(m.price()), size, Instant.ofEpochMilli(m.timestampMillis()));
     }
 
     private static Quote toQuote(PolygonMessage m) {
-        if (m.symbol() == null
-                || m.bidPrice() == null
-                || m.askPrice() == null
-                || m.timestampMillis() == null) {
+        if (m.symbol() == null || m.bidPrice() == null || m.askPrice() == null || m.timestampMillis() == null) {
             throw new IllegalArgumentException("quote missing required fields");
         }
         long bidSize = m.bidSize() == null ? 0L : m.bidSize();

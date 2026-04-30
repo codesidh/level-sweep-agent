@@ -13,16 +13,13 @@ import org.junit.jupiter.api.Test;
 class TickRingBufferTest {
 
     private static Tick tick(int i) {
-        return new Tick(
-                "SPY", BigDecimal.valueOf(594.0 + i * 0.01), 100L, Instant.ofEpochSecond(i));
+        return new Tick("SPY", BigDecimal.valueOf(594.0 + i * 0.01), 100L, Instant.ofEpochSecond(i));
     }
 
     @Test
     void capacityMustBePositive() {
-        assertThatThrownBy(() -> new TickRingBuffer(0))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new TickRingBuffer(-5))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TickRingBuffer(0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TickRingBuffer(-5)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

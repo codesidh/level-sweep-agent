@@ -25,14 +25,12 @@ class TickTest {
 
     @Test
     void rejectsNullPrice() {
-        assertThatThrownBy(() -> new Tick("SPY", null, 1L, Instant.now()))
-                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new Tick("SPY", null, 1L, Instant.now())).isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void rejectsNegativePrice() {
-        assertThatThrownBy(
-                        () -> new Tick("SPY", BigDecimal.valueOf(-1), 1L, Instant.now()))
+        assertThatThrownBy(() -> new Tick("SPY", BigDecimal.valueOf(-1), 1L, Instant.now()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("price must be non-negative");
     }

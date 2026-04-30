@@ -9,7 +9,6 @@ import com.levelsweep.shared.domain.marketdata.Tick;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -149,8 +148,7 @@ public final class PolygonStream {
         String auth = String.format("{\"action\":\"auth\",\"params\":\"%s\"}", apiKey);
         String subscribeParams =
                 String.join(",", symbols.stream().map(s -> "T." + s + ",Q." + s).toList());
-        String subscribe =
-                String.format("{\"action\":\"subscribe\",\"params\":\"%s\"}", subscribeParams);
+        String subscribe = String.format("{\"action\":\"subscribe\",\"params\":\"%s\"}", subscribeParams);
         return transport.send(auth).thenCompose(u -> transport.send(subscribe));
     }
 

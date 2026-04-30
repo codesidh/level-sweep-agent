@@ -41,16 +41,14 @@ public final class ConnectionMonitor {
     private final Duration errorWindow;
     private final Duration probeInterval;
     private final Deque<Instant> recentErrors = new ArrayDeque<>();
-    private final AtomicReference<ConnectionState> state =
-            new AtomicReference<>(ConnectionState.HEALTHY);
+    private final AtomicReference<ConnectionState> state = new AtomicReference<>(ConnectionState.HEALTHY);
     private volatile Instant unhealthySince;
 
     public ConnectionMonitor(String dependency, Clock clock) {
         this(dependency, clock, DEFAULT_ERROR_WINDOW, DEFAULT_PROBE_INTERVAL);
     }
 
-    public ConnectionMonitor(
-            String dependency, Clock clock, Duration errorWindow, Duration probeInterval) {
+    public ConnectionMonitor(String dependency, Clock clock, Duration errorWindow, Duration probeInterval) {
         this.dependency = Objects.requireNonNull(dependency, "dependency");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.errorWindow = Objects.requireNonNull(errorWindow, "errorWindow");

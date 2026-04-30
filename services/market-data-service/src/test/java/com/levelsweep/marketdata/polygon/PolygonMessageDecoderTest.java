@@ -25,8 +25,7 @@ class PolygonMessageDecoderTest {
 
     @Test
     void decodesSingleTrade() {
-        String frame =
-                "[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]";
+        String frame = "[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]";
         decoder.decode(frame, listener);
         assertThat(listener.ticks).hasSize(1);
         Tick t = listener.ticks.get(0);
@@ -53,12 +52,11 @@ class PolygonMessageDecoderTest {
 
     @Test
     void decodesMixedFrame() {
-        String frame =
-                "["
-                    + "{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000},"
-                    + "{\"ev\":\"Q\",\"sym\":\"SPY\",\"bp\":594.22,\"bs\":50,\"ap\":594.24,\"as\":75,\"t\":1714492800001},"
-                    + "{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.24,\"s\":200,\"t\":1714492800002}"
-                    + "]";
+        String frame = "["
+                + "{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000},"
+                + "{\"ev\":\"Q\",\"sym\":\"SPY\",\"bp\":594.22,\"bs\":50,\"ap\":594.24,\"as\":75,\"t\":1714492800001},"
+                + "{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.24,\"s\":200,\"t\":1714492800002}"
+                + "]";
         decoder.decode(frame, listener);
         assertThat(listener.ticks).hasSize(2);
         assertThat(listener.quotes).hasSize(1);
@@ -66,8 +64,7 @@ class PolygonMessageDecoderTest {
 
     @Test
     void decodesStatusFrame() {
-        String frame =
-                "[{\"ev\":\"status\",\"status\":\"auth_success\",\"message\":\"authenticated\"}]";
+        String frame = "[{\"ev\":\"status\",\"status\":\"auth_success\",\"message\":\"authenticated\"}]";
         decoder.decode(frame, listener);
         assertThat(listener.statuses).containsExactly("auth_success|authenticated");
     }
@@ -127,20 +124,18 @@ class PolygonMessageDecoderTest {
 
     @Test
     void listenerExceptionDoesNotPropagate() {
-        TickListener throwingListener =
-                new TickListener() {
-                    @Override
-                    public void onTick(Tick tick) {
-                        throw new RuntimeException("downstream blew up");
-                    }
+        TickListener throwingListener = new TickListener() {
+            @Override
+            public void onTick(Tick tick) {
+                throw new RuntimeException("downstream blew up");
+            }
 
-                    @Override
-                    public void onQuote(Quote quote) {
-                        // no-op
-                    }
-                };
-        String frame =
-                "[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]";
+            @Override
+            public void onQuote(Quote quote) {
+                // no-op
+            }
+        };
+        String frame = "[{\"ev\":\"T\",\"sym\":\"SPY\",\"p\":594.23,\"s\":100,\"t\":1714492800000}]";
         // Should not throw out of decode()
         decoder.decode(frame, throwingListener);
         assertThat(decoder.malformedCount()).isEqualTo(1);

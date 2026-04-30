@@ -11,12 +11,7 @@ import java.util.Objects;
  * the option premium mid for trail-floor ratchets.
  */
 public record Quote(
-        String symbol,
-        BigDecimal bidPrice,
-        long bidSize,
-        BigDecimal askPrice,
-        long askSize,
-        Instant timestamp) {
+        String symbol, BigDecimal bidPrice, long bidSize, BigDecimal askPrice, long askSize, Instant timestamp) {
 
     public Quote {
         Objects.requireNonNull(symbol, "symbol");
@@ -24,8 +19,7 @@ public record Quote(
         Objects.requireNonNull(askPrice, "askPrice");
         Objects.requireNonNull(timestamp, "timestamp");
         if (bidPrice.signum() < 0 || askPrice.signum() < 0) {
-            throw new IllegalArgumentException(
-                    "bid/ask must be non-negative: bid=" + bidPrice + ", ask=" + askPrice);
+            throw new IllegalArgumentException("bid/ask must be non-negative: bid=" + bidPrice + ", ask=" + askPrice);
         }
         if (bidSize < 0 || askSize < 0) {
             throw new IllegalArgumentException(
