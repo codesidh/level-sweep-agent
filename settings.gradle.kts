@@ -10,11 +10,10 @@ dependencyResolutionManagement {
         mavenCentral()
         maven("https://repo.spring.io/release")
     }
-    versionCatalogs {
-        create("libs") {
-            from(files("gradle/libs.versions.toml"))
-        }
-    }
+    // Note: `libs` is auto-created from gradle/libs.versions.toml at the conventional path.
+    // Do NOT add `versionCatalogs { create("libs") { from(...) } }` — Gradle 9 errors with
+    // "you can only call the 'from' method a single time" because auto-load already
+    // counts as one invocation.
 }
 
 rootProject.name = "level-sweep-agent"
