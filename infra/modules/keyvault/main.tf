@@ -106,3 +106,24 @@ resource "azurerm_key_vault_secret" "trading_economics_api_key" {
 
   depends_on = [azurerm_role_assignment.kv_admin_for_runner]
 }
+
+# App Insights connection string. Sourced from
+# `module.observability.app_insights_connection_string` post-apply via:
+#   az keyvault secret set \
+#     --vault-name <kv> \
+#     --name applicationinsights-connection-string \
+#     --value "$(terraform output -raw app_insights_connection_string)"
+# Mounted into the pod via the CSI SecretProviderClass and surfaced as the
+# APPLICATIONINSIGHTS_CONNECTION_STRING env var that the App Insights Java
+# agent reads at startup.
+resource "azurerm_key_vault_secret" "applicationinsights_connection_string" {
+  name         = "applicationinsights-connection-string"
+  value        = "REPLACE_AFTER_APPLY"
+  key_vault_id = azurerm_key_vault.main.id
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  depends_on = [azurerm_role_assignment.kv_admin_for_runner]
+}

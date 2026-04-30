@@ -18,3 +18,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "alert_email" {
+  description = "Email address for the Phase 1 action group. Empty == no email receiver wired (action group still created so alerts fire and can be tailed via the portal)."
+  type        = string
+  default     = ""
+}

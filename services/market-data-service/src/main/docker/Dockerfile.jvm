@@ -2,6 +2,16 @@
 # =============================================================================
 # market-data-service — JVM-mode (Quarkus fast-jar) container.
 # Native-image build is a Phase 7 task per architecture-spec §15.
+#
+# App Insights agent (microsoft/ApplicationInsights-Java) is downloaded at
+# image-build time and attached via -javaagent. The agent reads
+# APPLICATIONINSIGHTS_CONNECTION_STRING at runtime and ships traces / metrics /
+# logs to Application Insights. It also auto-instruments JDBC, Mongo, Kafka,
+# JVM internals, and SLF4J/Logback — for free.
+#
+# Quarkus' own OTel exporter is disabled in the %prod profile (see
+# application.yml) so the agent and the SDK don't double-emit and don't fight
+# over the same SDK lifecycle. The OTLP env var is left unset in production.
 # =============================================================================
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
@@ -9,6 +19,18 @@ FROM eclipse-temurin:21-jre-alpine AS runtime
 # we'll target in S7).
 RUN addgroup -S app && adduser -S app -G app -h /work
 WORKDIR /work
+
+# -----------------------------------------------------------------------------
+# Application Insights Java agent. Pinned to a real GitHub release tag —
+# verified via:
+#   gh api repos/microsoft/ApplicationInsights-Java/releases --jq '.[].tag_name'
+# Bump in lockstep with security advisories. The agent jar is ~30 MB.
+# -----------------------------------------------------------------------------
+ARG APPLICATIONINSIGHTS_AGENT_VERSION=3.7.8
+ADD --chown=app:app \
+    https://github.com/microsoft/ApplicationInsights-Java/releases/download/${APPLICATIONINSIGHTS_AGENT_VERSION}/applicationinsights-agent-${APPLICATIONINSIGHTS_AGENT_VERSION}.jar \
+    /work/applicationinsights-agent.jar
+
 USER app
 
 # Quarkus fast-jar layout. Copy in cache-friendly order:
@@ -24,7 +46,10 @@ COPY --chown=app:app build/quarkus-app/quarkus-run.jar  /work/quarkus-run.jar
 EXPOSE 8081
 
 # JAVA_OPTS_APPEND lets the operator add flags (e.g., GC tuning) without rebuilding.
+# The App Insights -javaagent is appended unconditionally; if
+# APPLICATIONINSIGHTS_CONNECTION_STRING is unset (local dev / replay), the
+# agent self-disables with a startup log line and adds no overhead beyond load.
 ENV LANG=C.UTF-8 \
-    JAVA_OPTS_APPEND="-XX:+ExitOnOutOfMemoryError"
+    JAVA_OPTS_APPEND="-XX:+ExitOnOutOfMemoryError -javaagent:/work/applicationinsights-agent.jar"
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS_APPEND -jar /work/quarkus-run.jar"]
