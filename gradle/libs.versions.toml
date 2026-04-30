@@ -114,7 +114,10 @@ quarkus-micrometer-prometheus     = { module = "io.quarkus:quarkus-micrometer-re
 quarkus-opentelemetry             = { module = "io.quarkus:quarkus-opentelemetry" }
 quarkus-config-yaml               = { module = "io.quarkus:quarkus-config-yaml" }
 quarkus-junit5                    = { module = "io.quarkus:quarkus-junit5" }
-quarkus-rest-assured              = { module = "io.quarkus:quarkus-rest-assured" }
+# Quarkus does not publish an `io.quarkus:quarkus-rest-assured` artifact;
+# the integration is via plain rest-assured plus `quarkus-junit5`. Keep the
+# catalog alias name for build-file convenience but point it at the actual jar.
+quarkus-rest-assured              = { module = "io.rest-assured:rest-assured", version.ref = "restAssured" }
 quarkus-kafka-client              = { module = "io.quarkus:quarkus-kafka-client" }
 quarkus-messaging-kafka           = { module = "io.quarkus:quarkus-messaging-kafka" }
 quarkus-mongodb-client            = { module = "io.quarkus:quarkus-mongodb-client" }
