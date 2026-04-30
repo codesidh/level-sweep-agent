@@ -150,8 +150,62 @@ docker compose down -v       # wipe volumes (Mongo + MS SQL data lost)
 | Quarkus dev mode complains about port already in use | Another container (or another Quarkus dev) is already on that port. Set `quarkus.http.port` env var. |
 | Spotless fails on a file you didn't touch | `./gradlew spotlessApply` — Palantir reformatter will fix it. |
 
+## Pre-commit hooks
+
+Install once per clone:
+
+```bash
+pip install pre-commit   # or: brew install pre-commit
+pre-commit install
+```
+
+Subsequent commits run automatically:
+
+| Hook | What it checks |
+|---|---|
+| `trailing-whitespace`, `end-of-file-fixer`, `mixed-line-ending` | Whitespace / newline hygiene |
+| `check-yaml`, `check-json` | Syntax validity |
+| `check-added-large-files` (max 512 kB) | Catches accidental binary commits |
+| `detect-private-key` | Catches PEM/SSH/etc. key material |
+| `gitleaks` | Secret scanning across repo (Alpaca tokens, Anthropic keys, etc.) |
+| `terraform_fmt`, `terraform_validate` | Formats and validates `infra/` |
+| `spotless` (Gradle local hook) | Java/Kotlin formatting via Palantir reformatter |
+
+Run on the whole repo any time:
+
+```bash
+pre-commit run --all-files
+```
+
+Skip in emergencies (discouraged): `git commit --no-verify`. The
+`trading-system-guardrails` skill flags this as a smell — only use
+when fixing the hooks themselves.
+
+## Terraform state bootstrap
+
+Before any `terraform apply` in `infra/`, the remote-state storage
+account must exist. Run the one-time bootstrap:
+
+```bash
+cd infra/bootstrap
+# follow infra/bootstrap/README.md
+```
+
+## GitHub Environments setup
+
+`.github/workflows/iac.yml` references `dev`, `stage`, and `prod`
+environments. Bootstrap them once with:
+
+```bash
+./scripts/setup-github-environments.sh
+```
+
+You'll then need to add per-environment secrets manually (the script
+prints exactly which) — the values are sensitive and stay out of git.
+
 ## Where to go next
 
 - Read [`architecture-spec.md`](../architecture-spec.md) §21 for the build phase plan.
 - Read [`CLAUDE.md`](../CLAUDE.md) for the guardrails.
+- Read [`adr/`](../adr/) for architectural decisions in force.
 - Pick a Phase 1 ticket from the project tracker.
