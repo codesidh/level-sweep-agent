@@ -1,0 +1,211 @@
+# =============================================================================
+# Alpaca Options Data smoke test (Phase 2 / Phase 3 prep).
+#
+# Three-step diagnostic:
+#   1. REST: list 0DTE SPY option contracts (or fall back to soonest expiry)
+#   2. REST: fetch snapshot (NBBO + greeks) for the first contract
+#   3. WS: connect to options feed, subscribe to that contract's trades+quotes
+#
+# Determines whether the same Alpaca subscription that gave us SIP stocks
+# also covers options OPRA — which is what Phase 2 strike selector and
+# Phase 3 trail manager need.
+# =============================================================================
+name: alpaca-options-smoke-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "GitHub Environment scope"
+        required: true
+        default: "dev"
+        type: choice
+        options: [dev, prod]
+      ws_feed:
+        description: "Options WS feed (opra paid / indicative free)"
+        required: true
+        default: "wss://stream.data.alpaca.markets/v1beta1/opra"
+        type: choice
+        options:
+          - "wss://stream.data.alpaca.markets/v1beta1/opra"
+          - "wss://stream.data.alpaca.markets/v1beta1/indicative"
+      underlying:
+        description: "Underlying symbol"
+        required: true
+        default: "SPY"
+        type: string
+      duration_sec:
+        description: "WS listen duration"
+        required: true
+        default: "30"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  options:
+    name: options-data-check
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-save ws
+
+      # ─────────────────────────────────────────────────────────────
+      # Step 1: Find a 0DTE (or soonest-expiry) option contract for the underlying.
+      # ─────────────────────────────────────────────────────────────
+      - name: REST — list option contracts
+        id: contracts
+        env:
+          K: ${{ secrets.ALPACA_API_KEY }}
+          S: ${{ secrets.ALPACA_SECRET_KEY }}
+          U: ${{ inputs.underlying }}
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          echo "→ GET /v1beta1/options/contracts?underlying_symbols=$U&expiration_date=$today (0DTE)"
+          response=$(curl -sS -w "\n__HTTP__:%{http_code}\n" \
+            -H "APCA-API-KEY-ID: $K" \
+            -H "APCA-API-SECRET-KEY: $S" \
+            "https://data.alpaca.markets/v1beta1/options/contracts?underlying_symbols=$U&expiration_date=$today&status=active&limit=20")
+          status_code=$(echo "$response" | tail -1 | cut -d: -f2)
+          body=$(echo "$response" | head -n -1)
+          echo "HTTP $status_code"
+          echo "$body" | head -c 800
+          echo ""
+
+          if [ "$status_code" != "200" ]; then
+            echo "::warning::Options contracts endpoint returned HTTP $status_code — may indicate no options data subscription"
+            echo "selected_contract=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          contract=$(echo "$body" | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              contracts = data.get('option_contracts', [])
+              print(contracts[0]['symbol'] if contracts else '')
+          except: print('')
+          " 2>/dev/null || echo "")
+
+          if [ -z "$contract" ]; then
+            echo "No 0DTE today; trying soonest expiry ≥ today"
+            response=$(curl -sS -w "\n__HTTP__:%{http_code}\n" \
+              -H "APCA-API-KEY-ID: $K" \
+              -H "APCA-API-SECRET-KEY: $S" \
+              "https://data.alpaca.markets/v1beta1/options/contracts?underlying_symbols=$U&expiration_date_gte=$today&status=active&limit=10")
+            body=$(echo "$response" | head -n -1)
+            echo "$body" | head -c 800; echo ""
+            contract=$(echo "$body" | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              contracts = data.get('option_contracts', [])
+              print(contracts[0]['symbol'] if contracts else '')
+          except: print('')
+          " 2>/dev/null || echo "")
+          fi
+
+          echo "selected_contract=$contract" >> $GITHUB_OUTPUT
+          echo ""
+          echo "✓ Selected contract for downstream tests: $contract"
+
+      # ─────────────────────────────────────────────────────────────
+      # Step 2: REST snapshot — exposes NBBO + greeks if entitled
+      # ─────────────────────────────────────────────────────────────
+      - name: REST — snapshot for selected contract
+        if: steps.contracts.outputs.selected_contract != ''
+        env:
+          K: ${{ secrets.ALPACA_API_KEY }}
+          S: ${{ secrets.ALPACA_SECRET_KEY }}
+          C: ${{ steps.contracts.outputs.selected_contract }}
+        run: |
+          echo "→ GET /v1beta1/options/snapshots/$C"
+          curl -sS -w "\n__HTTP__:%{http_code}\n" \
+            -H "APCA-API-KEY-ID: $K" \
+            -H "APCA-API-SECRET-KEY: $S" \
+            "https://data.alpaca.markets/v1beta1/options/snapshots/$C"
+
+      # ─────────────────────────────────────────────────────────────
+      # Step 3: WS — subscribe to options trades + quotes
+      # ─────────────────────────────────────────────────────────────
+      - name: WS — options stream
+        if: steps.contracts.outputs.selected_contract != ''
+        env:
+          K: ${{ secrets.ALPACA_API_KEY }}
+          S: ${{ secrets.ALPACA_SECRET_KEY }}
+          URL: ${{ inputs.ws_feed }}
+          C: ${{ steps.contracts.outputs.selected_contract }}
+          DURATION_SEC: ${{ inputs.duration_sec }}
+        run: |
+          node <<'EOF'
+          const WebSocket = require('ws');
+          const url = process.env.URL;
+          const contract = process.env.C;
+          const duration = parseInt(process.env.DURATION_SEC, 10) * 1000;
+
+          console.log(`→ connecting to ${url} for contract ${contract}`);
+          const ws = new WebSocket(url);
+
+          let connected = false, authenticated = false, subscribed = false;
+          let trades = 0, quotes = 0;
+
+          setTimeout(() => {
+            console.log(`\n=== SUMMARY (${(duration/1000)|0}s) ===`);
+            console.log(`connected:        ${connected}`);
+            console.log(`authenticated:    ${authenticated}`);
+            console.log(`subscribed:       ${subscribed}`);
+            console.log(`trades received:  ${trades}`);
+            console.log(`quotes received:  ${quotes}`);
+            try { ws.close(); } catch(_) {}
+            process.exit(authenticated ? 0 : 1);
+          }, duration);
+
+          ws.on('open', () => {
+            console.log('  ✓ socket open');
+            ws.send(JSON.stringify({
+              action: 'auth',
+              key: process.env.K,
+              secret: process.env.S,
+            }));
+          });
+
+          ws.on('message', (raw) => {
+            let msgs;
+            try { msgs = JSON.parse(raw.toString()); } catch(e) { return; }
+            if (!Array.isArray(msgs)) msgs = [msgs];
+            for (const m of msgs) {
+              if (m.T === 'success') {
+                console.log(`  [success] ${m.msg}`);
+                if (m.msg === 'connected') connected = true;
+                if (m.msg === 'authenticated') {
+                  authenticated = true;
+                  console.log(`  → subscribing trades=[${contract}] quotes=[${contract}]`);
+                  ws.send(JSON.stringify({
+                    action: 'subscribe',
+                    trades: [contract],
+                    quotes: [contract],
+                  }));
+                }
+              } else if (m.T === 'subscription') {
+                subscribed = true;
+                console.log(`  [subscription] trades=${(m.trades||[]).join(',')} quotes=${(m.quotes||[]).join(',')}`);
+              } else if (m.T === 'error') {
+                console.log(`  [error] code=${m.code} msg=${m.msg}`);
+              } else if (m.T === 't') {
+                trades++;
+                if (trades <= 3) console.log(`  [option-trade] ${m.S} p=${m.p} s=${m.s} t=${m.t}`);
+              } else if (m.T === 'q') {
+                quotes++;
+                if (quotes <= 3) console.log(`  [option-quote] ${m.S} bp=${m.bp} ap=${m.ap} bs=${m.bs} as=${m.as}`);
+              }
+            }
+          });
+
+          ws.on('error', (e) => console.error(`::error::ws error: ${e.message}`));
+          ws.on('close', (code, reason) => console.log(`  ⤫ closed: code=${code} reason=${reason || ''}`));
+          EOF
