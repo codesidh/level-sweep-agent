@@ -58,7 +58,7 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # Step 1: Find a 0DTE (or soonest-expiry) option contract for the underlying.
       # ─────────────────────────────────────────────────────────────
-      - name: REST — list option contracts
+      - name: REST — list option contracts (Trading API, not Market Data API)
         id: contracts
         env:
           K: ${{ secrets.ALPACA_API_KEY }}
@@ -66,19 +66,24 @@ jobs:
           U: ${{ inputs.underlying }}
         run: |
           today=$(date -u +%Y-%m-%d)
-          echo "→ GET /v1beta1/options/contracts?underlying_symbols=$U&expiration_date=$today (0DTE)"
+          # IMPORTANT: contracts endpoint lives on Trading API (paper or live),
+          # not on data.alpaca.markets. The /v1beta1/options/snapshots/* URL is
+          # the only Market Data path; everything else routes via Trading API.
+          BASE="https://paper-api.alpaca.markets"
+
+          echo "→ GET $BASE/v2/options/contracts?underlying_symbols=$U&expiration_date=$today (0DTE)"
           response=$(curl -sS -w "\n__HTTP__:%{http_code}\n" \
             -H "APCA-API-KEY-ID: $K" \
             -H "APCA-API-SECRET-KEY: $S" \
-            "https://data.alpaca.markets/v1beta1/options/contracts?underlying_symbols=$U&expiration_date=$today&status=active&limit=20")
+            "$BASE/v2/options/contracts?underlying_symbols=$U&expiration_date=$today&status=active&limit=20")
           status_code=$(echo "$response" | tail -1 | cut -d: -f2)
           body=$(echo "$response" | head -n -1)
           echo "HTTP $status_code"
-          echo "$body" | head -c 800
+          echo "$body" | head -c 1500
           echo ""
 
           if [ "$status_code" != "200" ]; then
-            echo "::warning::Options contracts endpoint returned HTTP $status_code — may indicate no options data subscription"
+            echo "::warning::contracts endpoint returned HTTP $status_code — options trading may not be enabled on the account"
             echo "selected_contract=" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -93,13 +98,14 @@ jobs:
           " 2>/dev/null || echo "")
 
           if [ -z "$contract" ]; then
-            echo "No 0DTE today; trying soonest expiry ≥ today"
+            echo ""
+            echo "No 0DTE contracts returned (weekend / holiday / pre-list time?); trying expiration_date_gte=$today"
             response=$(curl -sS -w "\n__HTTP__:%{http_code}\n" \
               -H "APCA-API-KEY-ID: $K" \
               -H "APCA-API-SECRET-KEY: $S" \
-              "https://data.alpaca.markets/v1beta1/options/contracts?underlying_symbols=$U&expiration_date_gte=$today&status=active&limit=10")
+              "$BASE/v2/options/contracts?underlying_symbols=$U&expiration_date_gte=$today&status=active&limit=10")
             body=$(echo "$response" | head -n -1)
-            echo "$body" | head -c 800; echo ""
+            echo "$body" | head -c 1200; echo ""
             contract=$(echo "$body" | python3 -c "
           import sys, json
           try:
