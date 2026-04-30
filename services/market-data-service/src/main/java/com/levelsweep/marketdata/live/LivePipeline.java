@@ -1,0 +1,306 @@
+package com.levelsweep.marketdata.live;
+
+import com.levelsweep.marketdata.alpaca.AlpacaConfig;
+import com.levelsweep.marketdata.alpaca.AlpacaStream;
+import com.levelsweep.marketdata.api.JdkWsTransport;
+import com.levelsweep.marketdata.api.TickListener;
+import com.levelsweep.marketdata.api.WsTransport;
+import com.levelsweep.marketdata.bars.BarAggregator;
+import com.levelsweep.marketdata.bars.BarListener;
+import com.levelsweep.marketdata.buffer.TickRingBuffer;
+import com.levelsweep.marketdata.connection.ConnectionMonitor;
+import com.levelsweep.marketdata.indicators.IndicatorEngine;
+import com.levelsweep.shared.domain.indicators.IndicatorSnapshot;
+import com.levelsweep.shared.domain.marketdata.Bar;
+import com.levelsweep.shared.domain.marketdata.Quote;
+import com.levelsweep.shared.domain.marketdata.Tick;
+import com.levelsweep.shared.domain.marketdata.Timeframe;
+import io.quarkus.runtime.ShutdownEvent;
+import io.quarkus.runtime.StartupEvent;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.time.Clock;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Production analog of {@link com.levelsweep.marketdata.replay.DataLayerPipeline}, driven by
+ * a live Alpaca WebSocket feed instead of synthetic ticks.
+ *
+ * <p>Wiring:
+ *
+ * <pre>
+ *   Alpaca WS  →  AlpacaStream  →  TickRingBuffer
+ *                                      ↓
+ *                              drainer thread (single-consumer)
+ *                                      ↓
+ *                                BarAggregator
+ *                                      ↓
+ *                            BarListener fan-out
+ *                                      ↓
+ *                              IndicatorEngine
+ *
+ *   Quotes  →  AlpacaStream  →  quote-counter (placeholder; Phase 3 wires trail manager)
+ * </pre>
+ *
+ * <p>If the Alpaca API key is blank (the dev/replay default) the pipeline still constructs
+ * the buffer + aggregator + indicator engine + drainer so the in-process replay path keeps
+ * working locally — it just skips the WS connect. Health endpoints (Phase 1 step S2) will
+ * report the FSM state as {@code HEALTHY} (the monitor still exists; it just never sees
+ * traffic) and operators can distinguish "idle" from "connected" via the connection-state
+ * gauge.
+ *
+ * <p>Determinism: the drainer thread's idle sleep ({@link LockSupport#parkNanos}) is not
+ * business logic. All business-clock reads stay in {@link BarAggregator} / {@link IndicatorEngine}
+ * via tick timestamps.
+ */
+@ApplicationScoped
+public class LivePipeline {
+
+    private static final Logger LOG = LoggerFactory.getLogger(LivePipeline.class);
+
+    // America/New_York is the canonical bar-alignment zone (Architecture Principle #10).
+    static final ZoneId BAR_ZONE = ZoneId.of("America/New_York");
+    // Drainer pulls in chunks; chunk size is small enough to keep latency tight under load
+    // and large enough to amortize lock acquisition on the buffer.
+    private static final int DRAIN_BATCH = 1024;
+    // Idle-park duration when the drain returns empty. Coarser than tight-spin, fine
+    // enough that bar-boundary latency stays well under 1s.
+    private static final long IDLE_PARK_NANOS = 1_000_000L; // 1 ms
+    // Shutdown bound for awaiting the drainer thread.
+    private static final long SHUTDOWN_AWAIT_SECONDS = 5L;
+
+    private final AlpacaConfig cfg;
+    private final TickRingBuffer buffer;
+    private final ConnectionMonitor connectionMonitor;
+    private final BarAggregator barAggregator;
+    private final IndicatorEngine indicatorEngine;
+    private final AtomicLong quoteCount = new AtomicLong();
+
+    private volatile AlpacaStream stream;
+    private volatile Thread drainer;
+    private volatile boolean shutdown;
+
+    @Inject
+    public LivePipeline(AlpacaConfig cfg) {
+        this(cfg, new TickRingBuffer(cfg.ringBufferCapacity()), new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+    }
+
+    /** Test seam: lets a test inject a sized buffer + monitor without touching env config. */
+    LivePipeline(AlpacaConfig cfg, TickRingBuffer buffer, ConnectionMonitor connectionMonitor) {
+        this.cfg = Objects.requireNonNull(cfg, "cfg");
+        this.buffer = Objects.requireNonNull(buffer, "buffer");
+        this.connectionMonitor = Objects.requireNonNull(connectionMonitor, "connectionMonitor");
+
+        // Phase 1 ships single-symbol (SPY). Multi-symbol expansion will register one
+        // BarAggregator per symbol upstream of a fan-out router; the per-symbol contract
+        // of BarAggregator already enforces this (it ignores ticks for other symbols).
+        String symbol = cfg.symbols().isEmpty() ? "SPY" : cfg.symbols().get(0);
+
+        // IndicatorEngine first so the bar fan-out lambda below can capture it as a
+        // definitely-assigned final local (Java's definite-assignment doesn't track
+        // lambda captures across out-of-order constructor assignments).
+        java.util.function.Consumer<IndicatorSnapshot> snapSink = snap -> {
+            // Phase 2 wires the Decision Engine onto this. Phase 1 just logs at DEBUG.
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("indicator snapshot symbol={} timestamp={}", snap.symbol(), snap.timestamp());
+            }
+        };
+        this.indicatorEngine = new IndicatorEngine(symbol, snapSink);
+        BarListener barFanout = new BarListener() {
+            @Override
+            public void onBar(Bar bar) {
+                indicatorEngine.onBar(bar);
+            }
+        };
+        // Quote routing: in the live path, AlpacaStream dispatches quotes directly to
+        // the listener registered with the stream (see quoteCountingListener()). Quotes
+        // never flow through the ring buffer or the aggregator, so the aggregator's
+        // optional quote-forward seam is unused here. Phase 3 trail manager will hook
+        // the WS-side listener directly.
+        this.barAggregator = new BarAggregator(
+                symbol,
+                BAR_ZONE,
+                List.of(Timeframe.ONE_MIN, Timeframe.TWO_MIN, Timeframe.FIFTEEN_MIN, Timeframe.DAILY),
+                barFanout);
+    }
+
+    void start(@Observes StartupEvent ev) {
+        LOG.info(
+                "LivePipeline starting symbols={} ringBufferCapacity={} feed={} dependency={}",
+                cfg.symbols(),
+                cfg.ringBufferCapacity(),
+                cfg.feed(),
+                connectionMonitor.dependency());
+
+        // Drainer is always started — even when the WS is skipped — so tests and the
+        // in-process replay path can offer ticks straight to the buffer and observe
+        // bars flow through the aggregator.
+        startDrainer();
+
+        if (cfg.apiKey().isBlank()) {
+            LOG.warn("alpaca credentials missing — skipping live WS connect; service running in idle mode");
+            return;
+        }
+
+        // Construct the AlpacaStream + transport. The Builder requires a transport up
+        // front, but the transport's Listener has to be the one returned by
+        // AlpacaStream#createTransportListener — which exists only after build().
+        // Resolve the chicken-and-egg via an AtomicReference indirection: the
+        // transport delegates every callback through the ref, and we set the ref
+        // immediately after building the stream.
+        AtomicReference<WsTransport.Listener> listenerRef = new AtomicReference<>();
+        WsTransport transport = new JdkWsTransport(
+                URI.create(cfg.wsUrl()),
+                HttpClient.newHttpClient(),
+                AlpacaStream.defaultConnectTimeout(),
+                new WsTransport.Listener() {
+                    @Override
+                    public void onOpen() {
+                        WsTransport.Listener delegate = listenerRef.get();
+                        if (delegate != null) {
+                            delegate.onOpen();
+                        }
+                    }
+
+                    @Override
+                    public void onText(String frame) {
+                        WsTransport.Listener delegate = listenerRef.get();
+                        if (delegate != null) {
+                            delegate.onText(frame);
+                        }
+                    }
+
+                    @Override
+                    public void onError(Throwable cause) {
+                        WsTransport.Listener delegate = listenerRef.get();
+                        if (delegate != null) {
+                            delegate.onError(cause);
+                        }
+                    }
+
+                    @Override
+                    public void onClose(int code, String reason) {
+                        WsTransport.Listener delegate = listenerRef.get();
+                        if (delegate != null) {
+                            delegate.onClose(code, reason);
+                        }
+                    }
+                });
+
+        AlpacaStream s = AlpacaStream.builder()
+                .transport(transport)
+                .monitor(connectionMonitor)
+                .buffer(buffer)
+                .listener(quoteCountingListener())
+                .symbols(cfg.symbols())
+                .apiKey(cfg.apiKey())
+                .secretKey(cfg.secretKey())
+                .build();
+        listenerRef.set(s.createTransportListener());
+        this.stream = s;
+
+        // Kick the connect — fire-and-forget; AlpacaStream + ConnectionMonitor handle
+        // failures by transitioning the FSM. An outer supervisor (Phase 7) will decide
+        // when to recreate + restart on UNHEALTHY.
+        s.start();
+    }
+
+    void stop(@Observes ShutdownEvent ev) {
+        LOG.info("LivePipeline stopping");
+        shutdown = true;
+        Thread d = drainer;
+        if (d != null) {
+            d.interrupt();
+            try {
+                d.join(TimeUnit.SECONDS.toMillis(SHUTDOWN_AWAIT_SECONDS));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        AlpacaStream s = stream;
+        if (s != null) {
+            try {
+                s.stop().toCompletableFuture().get(SHUTDOWN_AWAIT_SECONDS, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                LOG.warn("alpaca stream stop did not complete cleanly: {}", e.toString());
+            }
+        }
+    }
+
+    private void startDrainer() {
+        shutdown = false;
+        // Virtual thread — drainer spends most of its life parked. Single-consumer
+        // contract: only this thread drains the buffer.
+        Thread t = Thread.ofVirtual().name("market-data-drainer").unstarted(this::drainLoop);
+        this.drainer = t;
+        t.start();
+    }
+
+    private void drainLoop() {
+        while (!shutdown) {
+            List<Tick> batch = buffer.drain(DRAIN_BATCH);
+            if (batch.isEmpty()) {
+                LockSupport.parkNanos(IDLE_PARK_NANOS);
+                continue;
+            }
+            for (Tick tick : batch) {
+                barAggregator.onTick(tick);
+            }
+        }
+    }
+
+    /**
+     * Listener handed to {@link AlpacaStream}: ticks are absorbed by the ring buffer
+     * inside {@code AlpacaStream.InternalListener} so we don't need to handle them here.
+     * Quotes are counted (Phase 3 trail manager will replace this).
+     */
+    private TickListener quoteCountingListener() {
+        return new TickListener() {
+            @Override
+            public void onTick(Tick tick) {
+                // No-op — the bar path consumes ticks through the buffer + drainer.
+            }
+
+            @Override
+            public void onQuote(Quote quote) {
+                quoteCount.incrementAndGet();
+            }
+        };
+    }
+
+    public BarAggregator barAggregator() {
+        return barAggregator;
+    }
+
+    public IndicatorEngine indicatorEngine() {
+        return indicatorEngine;
+    }
+
+    public ConnectionMonitor connectionMonitor() {
+        return connectionMonitor;
+    }
+
+    public TickRingBuffer tickRingBuffer() {
+        return buffer;
+    }
+
+    public long quoteCount() {
+        return quoteCount.get();
+    }
+
+    /** Whether the live WS path was wired (false in dev/replay when api key is blank). */
+    public boolean wsAttached() {
+        return stream != null;
+    }
+}
