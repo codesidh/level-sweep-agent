@@ -115,5 +115,6 @@ Skills auto-load by trigger phrase. See `.claude/skills/`.
 - `phase-a-b-feature-flags` — Phase B code stays behind flags until legal review
 - `replay-parity` — Decision Engine changes require replay parity test
 - `gradle-build-conventions` — version catalog, Gradle pinning, Spotless, dep verification
+- `alpaca-trading-api` — Alpaca REST + WS reference (endpoints, auth, OCC symbols, order shapes); fast-load summary backed by `docs/alpaca-trading-api-skill.md`
 
 **Inherited from `claude-code-java`**: java-code-review, security-audit, concurrency-review, performance-smell-detection, test-quality, architecture-review, solid-principles, design-patterns, clean-code, spring-boot-patterns, jpa-patterns, java-migration, logging-patterns, git-commit, changelog-generator, issue-triage, api-contract-review, maven-dependency-audit *(harmless if unused — we're on Gradle)*.
