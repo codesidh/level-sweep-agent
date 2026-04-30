@@ -19,10 +19,10 @@ dependencies {
     implementation(libs.quarkus.opentelemetry)
     implementation(libs.quarkus.kafka.client)
     implementation(libs.quarkus.mongodb.client)
+    implementation(libs.quarkus.agroal)
     implementation(libs.quarkus.jdbc.mssql)
-    implementation(libs.flyway.core)
+    implementation(libs.quarkus.flyway)
     implementation(libs.flyway.mssql)
-    implementation(libs.hikaricp)
     implementation(libs.quarkus.smallrye.fault.tolerance)
 
     testImplementation(libs.quarkus.junit5)

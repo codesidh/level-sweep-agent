@@ -122,6 +122,8 @@ quarkus-kafka-client              = { module = "io.quarkus:quarkus-kafka-client"
 quarkus-messaging-kafka           = { module = "io.quarkus:quarkus-messaging-kafka" }
 quarkus-mongodb-client            = { module = "io.quarkus:quarkus-mongodb-client" }
 quarkus-jdbc-mssql                = { module = "io.quarkus:quarkus-jdbc-mssql" }
+quarkus-agroal                    = { module = "io.quarkus:quarkus-agroal" }
+quarkus-flyway                    = { module = "io.quarkus:quarkus-flyway" }
 quarkus-smallrye-fault-tolerance  = { module = "io.quarkus:quarkus-smallrye-fault-tolerance" }
 
 # --- Spring Boot ---
