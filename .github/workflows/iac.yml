@@ -62,7 +62,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [dev, stage, prod]
+        # Phase A: dev + prod only. The 'stage' environment skeleton stays in
+        # infra/environments/stage/ for Phase B activation per architecture-spec
+        # §19.3 / §21.
+        environment: [dev, prod]
     steps:
       - uses: actions/checkout@v4
 

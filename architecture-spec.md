@@ -1,8 +1,10 @@
 # LevelSweepAgent — Architecture Specification
 
-**Version**: 2.2
+**Version**: 2.3
 **Companion to**: `requirements.md` v1.0
 **Status**: Locked for Phase A (single-tenant); Phase B gated on legal review
+
+**v2.3 changelog**: per-phase production-readiness gate (§21.1) — every phase ships to Azure dev, soaks ≥5 RTH sessions against live external deps, ships observability + alerts + runbook before the next phase can merge. Stage environment dropped from Phase A active CI matrix (kept in IaC skeleton for Phase B). Phase 8/9 simplified — most operational lift now happens in earlier phases.
 
 **v2.2 changelog**: time-zone discipline (§5 #10, §10.1), latency-budget header clarified (§14), per-table retention column (§13.1), Anthropic 4xx/5xx/529 explicit failure modes (§4.9), JIT warm-up scope clarified (§12.3), CLAUDE.md glossary expansion.
 
@@ -847,11 +849,15 @@ Dashboard "Connect Alpaca" ─▶ Alpaca authorize URL ─▶ user grants ─▶
 
 ### 19.3 Environments
 
+Phase A operates **dev + prod** only. The `stage` environment skeleton stays in
+`infra/environments/stage/` for Phase B activation; it is **not** in the active
+CI matrix or `setup-github-environments.sh` until Phase B prep.
+
 | Env | Purpose | Cluster | Data |
 |---|---|---|---|
-| `dev` | feature dev | shared | mocked Polygon + Alpaca paper + mocked Anthropic |
-| `stage` | pre-prod | dedicated | live Polygon + Alpaca paper + live Anthropic |
-| `prod` | live | dedicated (Phase A: small) | live Polygon + Alpaca live + live Anthropic |
+| `dev` | feature dev + per-phase soak | dedicated AKS small | live Polygon + Alpaca paper + live Anthropic (per phase rollout) |
+| `prod` | live trading (Phase A: owner-only) | dedicated AKS small | live Polygon + Alpaca live + live Anthropic |
+| `stage` *(Phase B only — dormant in Phase A)* | pre-prod | dedicated | live Polygon + Alpaca paper + live Anthropic |
 
 ---
 
@@ -878,25 +884,99 @@ Dashboard "Connect Alpaca" ─▶ Alpaca authorize URL ─▶ user grants ─▶
 
 ## 21. Build Phase Plan
 
-| Phase | Deliverable | Exit gate |
-|---|---|---|
-| **0 — Scaffolding** | Multi-module Gradle project, Terraform skeleton, GitHub Actions, Auth0 dev tenant, AKS dev cluster, MS SQL + Mongo + Strimzi Kafka provisioned | `make ci` green; empty containers deploy to dev AKS |
-| **1 — Data layer** | Market Data Service + bar aggregator + Level Calculator + Indicator Engine; replay harness | Replay parity ≥ 99% on 30 sessions |
-| **2 — Decision Engine** | Signal + Risk + Strike + Trade Saga + all FSMs (no Sentinel yet) | Hand-labeled days produce expected signals; FSM transitions persisted |
-| **3 — Execution (paper)** | Execution Service + Alpaca paper + stop watcher + trailing manager + EOD flatten | 5+ paper sessions match replay within ±2% |
-| **4 — AI Agent (Narrator + Reviewer)** | AI Agent Service skeleton; Trade Narrator on entry/exit events; Daily Reviewer at 16:30 | Narratives appear in journal; daily reports generated; cost cap honored |
-| **5 — AI Agent (Sentinel + Assistant)** | Pre-Trade Sentinel with veto wired into Trade Saga; Conversational Assistant with read-only tools | Sentinel false-veto rate < 5%; Assistant answers 10 canonical questions correctly; **AI replay parity**: same recorded inputs produce identical Sentinel decisions across runs (deterministic via `temperature=0` + tool-use `tool_choice="tool"` forcing) |
-| **6 — Journal & State + Cold path** | Journal Service + User/Config + Projection + Calendar + Notification | API gateway live; basic Angular dashboard reads positions and AI chat |
-| **7 — Resilience hardening** | CB + bulkhead + idempotency tests; chaos kill-test; reconnect logic; DLQ + replay tooling; AI fallback paths verified | Chaos test passes: kill mid-trade, resume cleanly; AI degrades gracefully |
-| **8 — Phase A live** | Switch Alpaca to live keys with owner's account; small position sizes; observability on; Sentinel veto enabled with conservative threshold | 20-session paper soak passes; first 5 live sessions reviewed daily |
-| **9 — Phase A soak** | 60+ sessions live trading with logging; AI cost trends reviewed weekly | Documented edge over 60 sessions; AI cost predictable; ready to consider Phase B |
-| **10 — Phase B prep (gated on legal)** | Legal review complete; Auth0 user flows; Alpaca per-user OAuth; billing; AI suggestion tools | Legal sign-off; SOC 2 baseline; ToS published |
-| **11 — Phase B launch** | Multi-tenant unlock + Operations Agent | Production launch |
+Each phase has **two gates** that both must clear before the next phase can
+begin merging work:
+
+- **Code gate** — replay parity, unit tests, integration tests (per phase row)
+- **Production-readiness gate** — Azure dev deployment + ≥5 RTH session soak
+  against the phase's live external dependencies + observability + alerts +
+  runbook (per §21.1)
+
+The two gates are STRICT: Phase N+1 PRs are blocked from merging until Phase N
+clears both. This avoids the "deploy at the end" failure mode where local-only
+code surprises us in production.
+
+| Phase | Deliverable | Code exit gate | Soak gate (per §21.1) |
+|---|---|---|---|
+| **0 — Scaffolding** | Multi-module Gradle, Terraform skeleton, GitHub Actions, Auth0 dev tenant, AKS dev cluster, MS SQL + Mongo + Strimzi Kafka provisioned | `make ci` green; empty containers deploy to dev AKS | Infrastructure provisioned in dev; CI/CD pipeline executes end-to-end on a no-op service; Key Vault + App Insights wired |
+| **1 — Data layer** | Market Data Service + bar aggregator + Level Calculator + Indicator Engine; replay harness | Replay parity ≥ 99% on 30 sessions | Live Polygon paid tier; 5 RTH session soak; metrics + 5 alerts + runbook |
+| **2 — Decision Engine** | Signal + Risk + Strike + Trade Saga + all FSMs (no Sentinel yet) | Hand-labeled days produce expected signals; FSM transitions persisted | 5 RTH sessions on live Polygon: signals fire on real data, hand-reviewed; Risk FSM transitions logged; saga step latencies under SLO |
+| **3 — Execution (paper)** | Execution Service + Alpaca paper + stop watcher + trailing manager + EOD flatten | 5+ paper sessions match replay within ±2% | 5 RTH sessions of live paper trading: orders placed, stops fire correctly, EOD flatten reliable, no fills mismatched |
+| **4 — AI Agent (Narrator + Reviewer)** | AI Agent Service skeleton; Trade Narrator; Daily Reviewer | Narratives appear in journal; daily reports generated; cost cap honored | 5 RTH sessions: real Anthropic calls; cost tracked; narratives reviewed for advice-vs-execution framing; Reviewer reports landing nightly |
+| **5 — AI Agent (Sentinel + Assistant)** | Pre-Trade Sentinel with veto wired into Trade Saga; Conversational Assistant with read-only tools | Sentinel false-veto rate < 5%; Assistant answers 10 canonical questions correctly; **AI replay parity**: same recorded inputs produce identical Sentinel decisions across runs (deterministic via `temperature=0` + tool-use `tool_choice="tool"` forcing) | 5 RTH sessions: Sentinel veto loop on live signals; Assistant chat exercised by owner; veto-rate anomaly alert quiet |
+| **6 — Journal & State + Cold path + Frontend** | Journal Service + User/Config + Projection + Calendar + Notification + Angular dashboard | API gateway live; dashboard reads positions and AI chat | 5 RTH sessions: dashboard live; Auth0 login working; positions / journal / chat all rendering against live data |
+| **7 — Resilience hardening** | CB + bulkhead + idempotency tests; chaos kill-test; reconnect logic; DLQ + replay tooling; AI fallback paths verified | Chaos test passes: kill mid-trade, resume cleanly; AI degrades gracefully | 5 RTH sessions with chaos injection: process kills, network partitions, AI rate limits — all recover cleanly |
+| **8 — Phase A live** | Switch Alpaca paper → live with owner account; small position sizes; Sentinel veto on conservative threshold | First 5 live sessions reviewed daily; no surprises beyond paper soak | (Phase 8 IS the soak — 5 live sessions = the gate) |
+| **9 — Phase A soak** | 60+ sessions live trading with logging; AI cost trends reviewed weekly | Documented edge over 60 sessions; AI cost predictable; ready to consider Phase B | n/a (this phase IS production operation) |
+| **10 — Phase B prep (gated on legal)** | Legal review; Auth0 user flows; Alpaca per-user OAuth; billing; AI suggestion tools | Legal sign-off; SOC 2 baseline; ToS published | Stage environment activated; multi-tenant integration tests pass |
+| **11 — Phase B launch** | Multi-tenant unlock + Operations Agent | Production launch | Production launch with paying customers |
 
 **No phase merges to main without:**
 1. All acceptance tests green (incl. AI replay)
 2. Replay parity preserved
 3. Architecture decision record (ADR) updated for any deviation
+4. **Soak gate (§21.1) passed for the phase being merged out of**
+
+## 21.1 Per-phase production-readiness gate
+
+Every phase ships to Azure dev and runs against the live external dependencies
+it introduced. A phase is not done until:
+
+- ✅ **Deployed to Azure dev** via Terraform-provisioned AKS + Key Vault + App Insights + outbound NAT
+- ✅ **Soaked for ≥ 5 RTH sessions** with the phase's live external dependency
+- ✅ **Observability shipped** — metrics, traces, structured logs flowing to App Insights
+- ✅ **Alerts active** — see per-phase alert table below
+- ✅ **Runbook published** — `docs/runbooks/phase-N.md` covers restart, log access, common diagnoses, escalation
+- ✅ **No P0/P1 incident during soak** that wasn't immediately recovered
+
+This is a **STRICT** gate: Phase N+1 PRs cannot merge to main until Phase N
+clears both code and soak gates. Use feature branches normally, but the merge
+button is held until soak is green.
+
+### Live external dependencies introduced per phase
+
+| Phase | Live external dep introduced |
+|---|---|
+| 0 | Azure (AKS, Key Vault, App Insights) |
+| 1 | Polygon paid tier (WS + REST) |
+| 2 | (none new — uses Polygon from Phase 1) |
+| 3 | Alpaca paper |
+| 4 | Anthropic API (Narrator + Reviewer) |
+| 5 | (Sentinel + Assistant use same Anthropic) |
+| 6 | Auth0 |
+| 7 | Chaos engineering against all of the above |
+| 8 | Alpaca live |
+| 10 | Stripe (Phase B prep) |
+
+### Alerts to ship per phase (cumulative)
+
+| Phase | New alerts |
+|---|---|
+| 1 | (a) no SPY ticks for 5 min during RTH (b) Polygon CB UNHEALTHY (c) bar emission lag P99 > 100ms (d) market-data-service container restart (e) ATR(14) stale > 1 trading day |
+| 2 | (a) signal evaluation latency P99 > 50ms (b) Risk FSM HALTED (c) saga step timeout |
+| 3 | (a) Alpaca CB UNHEALTHY (b) order fill timeout (c) EOD flatten failure (d) trail manager NBBO snapshot stale |
+| 4 | (a) Anthropic CB UNHEALTHY (b) AI cost cap breached (c) narrator queue depth > 50 |
+| 5 | (a) Sentinel veto-rate anomaly (>20% or =0% over 10 sessions) (b) Sentinel timeout > 30s |
+| 6 | (a) Auth0 CB UNHEALTHY (b) APIM rate limit hits (c) dashboard latency P99 > 500ms |
+| 7 | (chaos test pass) |
+
+### Runbook content baseline
+
+Every `docs/runbooks/phase-N.md` covers:
+- How to deploy / redeploy this service to dev
+- How to access logs (App Insights query, kubectl logs)
+- How to restart a pod
+- 3+ common failure modes and diagnoses
+- Escalation path (who/how to alert; for Phase A: just "owner via SMS")
+
+### Soak failure handling
+
+If a phase soak surfaces a P0/P1 issue:
+1. Open a `bug` issue tagged with the phase milestone
+2. Block phase exit until fixed
+3. Restart soak counter — must complete a fresh 5 sessions clean
+
+Minor issues (P2/P3) are tracked but don't reset the counter.
 
 ---
 

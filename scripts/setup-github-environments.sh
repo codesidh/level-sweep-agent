@@ -15,8 +15,10 @@ set -euo pipefail
 REPO="${REPO:-codesidh/level-sweep-agent}"
 ADMIN_LOGIN="${ADMIN_LOGIN:-codesidh}"
 
+# Phase A: dev + prod only. The 'stage' environment is created by Phase B prep
+# (architecture-spec §19.3 / §21). To activate later, append 'stage' here.
 echo "→ Ensuring GitHub Environments exist on $REPO"
-for env in dev stage prod; do
+for env in dev prod; do
   gh api -X PUT "repos/$REPO/environments/$env" >/dev/null
   echo "  ✓ $env"
 done
