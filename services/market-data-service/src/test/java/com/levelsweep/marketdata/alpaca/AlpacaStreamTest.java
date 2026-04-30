@@ -89,7 +89,9 @@ class AlpacaStreamTest {
         transport.deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
         // Re-deliver the same authenticated status — subscribe should not double-fire
         transport.deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
-        long subFrames = transport.sentFrames.stream().filter(f -> f.contains("\"action\":\"subscribe\"")).count();
+        long subFrames = transport.sentFrames.stream()
+                .filter(f -> f.contains("\"action\":\"subscribe\""))
+                .count();
         assertThat(subFrames).isEqualTo(1L);
     }
 
@@ -106,7 +108,8 @@ class AlpacaStreamTest {
     void incomingQuoteDoesNotPopulateBuffer() {
         AlpacaStream.await(stream.start());
         transport.deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
-        transport.deliver("[{\"T\":\"q\",\"S\":\"SPY\",\"bp\":594.20,\"bs\":100,\"ap\":594.25,\"as\":200,\"t\":\"2026-04-30T13:30:00Z\"}]");
+        transport.deliver(
+                "[{\"T\":\"q\",\"S\":\"SPY\",\"bp\":594.20,\"bs\":100,\"ap\":594.25,\"as\":200,\"t\":\"2026-04-30T13:30:00Z\"}]");
         assertThat(listener.quotes).hasSize(1);
         assertThat(buffer.size()).isZero();
     }

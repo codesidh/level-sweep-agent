@@ -173,11 +173,10 @@ public final class AlpacaStream {
         String escapedKey = jsonEscape(apiKey);
         String escapedSecret = jsonEscape(secretKey);
         String auth = "{\"action\":\"auth\",\"key\":\"" + escapedKey + "\",\"secret\":\"" + escapedSecret + "\"}";
-        transport.send(auth)
-                .exceptionally(t -> {
-                    LOG.warn("send auth failed", t);
-                    return null;
-                });
+        transport.send(auth).exceptionally(t -> {
+            LOG.warn("send auth failed", t);
+            return null;
+        });
     }
 
     private void sendSubscribe() {
@@ -189,11 +188,10 @@ public final class AlpacaStream {
         sb.append("],\"bars\":[");
         appendQuotedCsv(sb, symbols);
         sb.append("]}");
-        transport.send(sb.toString())
-                .exceptionally(t -> {
-                    LOG.warn("send subscribe failed", t);
-                    return null;
-                });
+        transport.send(sb.toString()).exceptionally(t -> {
+            LOG.warn("send subscribe failed", t);
+            return null;
+        });
     }
 
     private static void appendQuotedCsv(StringBuilder sb, List<String> items) {

@@ -67,8 +67,7 @@ class AlpacaMessageDecoderTest {
 
     @Test
     void decodesSuccessStatusFrame() {
-        String frame = "[{\"T\":\"success\",\"msg\":\"connected\"},"
-                + "{\"T\":\"success\",\"msg\":\"authenticated\"}]";
+        String frame = "[{\"T\":\"success\",\"msg\":\"connected\"}," + "{\"T\":\"success\",\"msg\":\"authenticated\"}]";
         decoder.decode(frame, listener);
         assertThat(listener.statuses).hasSize(2);
         assertThat(listener.statuses.get(0)).isEqualTo("success|connected");
@@ -80,7 +79,10 @@ class AlpacaMessageDecoderTest {
         String frame = "[{\"T\":\"subscription\",\"trades\":[\"SPY\"],\"quotes\":[\"SPY\"],\"bars\":[\"SPY\"]}]";
         decoder.decode(frame, listener);
         assertThat(listener.statuses).hasSize(1);
-        assertThat(listener.statuses.get(0)).contains("trades=SPY").contains("quotes=SPY").contains("bars=SPY");
+        assertThat(listener.statuses.get(0))
+                .contains("trades=SPY")
+                .contains("quotes=SPY")
+                .contains("bars=SPY");
     }
 
     @Test

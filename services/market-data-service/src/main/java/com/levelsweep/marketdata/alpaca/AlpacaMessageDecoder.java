@@ -90,11 +90,7 @@ public final class AlpacaMessageDecoder {
             // Other event types silently dropped.
         } catch (Exception e) {
             malformedCount++;
-            LOG.warn(
-                    "dropped Alpaca message (count={}, type={}): {}",
-                    malformedCount,
-                    m.type(),
-                    e.getMessage());
+            LOG.warn("dropped Alpaca message (count={}, type={}): {}", malformedCount, m.type(), e.getMessage());
         }
     }
 
@@ -107,10 +103,7 @@ public final class AlpacaMessageDecoder {
     }
 
     private static Quote toQuote(AlpacaMessage m) {
-        if (m.symbol() == null
-                || m.bidPrice() == null
-                || m.askPrice() == null
-                || m.timestamp() == null) {
+        if (m.symbol() == null || m.bidPrice() == null || m.askPrice() == null || m.timestamp() == null) {
             throw new IllegalArgumentException("quote missing required fields");
         }
         long bidSize = m.bidSize() == null ? 0L : m.bidSize();
