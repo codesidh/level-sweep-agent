@@ -1,0 +1,106 @@
+# =============================================================================
+# Default values for market-data-service.
+# Per-environment overrides are passed via `helm upgrade --install --set ...`
+# from .github/workflows/deploy-dev.yml. Do NOT put secrets here — KV-mounted
+# values flow in via the Azure Key Vault CSI SecretProviderClass.
+# =============================================================================
+
+image:
+  # set per env in the deploy workflow, e.g. "<acr>.azurecr.io/market-data-service".
+  repository: ""
+  # overridden per push to the immutable git SHA.
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Phase 1 single-instance per architecture-spec §16. Multi-replica + leader
+# election arrives in Phase 7 once the WS adapter is sharded.
+replicas: 1
+
+service:
+  port: 8081
+  type: ClusterIP
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 768Mi
+  limits:
+    # Memory limit only — no CPU limit per Quarkus + JDK 21 best practice on
+    # K8s (CFS throttling kills latency tail). The HPA is added in Phase 7.
+    memory: 1536Mi
+
+# Plain-text application config. Anything secret comes from keyVault.objects.
+env:
+  TENANT_ID: "OWNER"
+  ALPACA_FEED: "sip"
+  ALPACA_SYMBOLS: "SPY"
+  ALPACA_WS_BASE_URL: "wss://stream.data.alpaca.markets"
+  ALPACA_DATA_URL: "https://data.alpaca.markets"
+  ALPACA_BASE_URL: "https://paper-api.alpaca.markets"
+  # Kafka is not deployed in Phase 1 (Phase 6 introduces the Strimzi cluster).
+  # The bar publisher swallows broker failures and logs a WARN, so a bogus
+  # bootstrap is safe in dev.
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  MONGO_URL: "mongodb://mongo:27017"
+  MONGO_DB: "level_sweep"
+  MSSQL_URL: "jdbc:sqlserver://mssql:1433;databaseName=level_sweep;encrypt=false"
+  MSSQL_USER: "sa"
+  # Set by the deploy workflow from App Insights connection-string-derived
+  # ingest endpoint. Empty = OTel exporter disabled (dev-friendly default).
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+
+# Workload identity binding (Azure AD federated → K8s ServiceAccount).
+workloadIdentity:
+  enabled: true
+  # Per-env: AKS-bound user-assigned MI client id. Phase 1 reuses the kubelet
+  # MI; Phase 7 swaps in a dedicated per-service MI federated to this SA.
+  clientId: ""
+
+keyVault:
+  enabled: true
+  # Per-env Azure AD tenant ID.
+  tenantId: ""
+  # Bare KV name (not URI). Set by the deploy workflow to keep template-side
+  # parsing trivial.
+  name: ""
+  # KV URI is stored on the SecretProviderClass too for traceability /
+  # downstream tooling.
+  vaultUri: ""
+  objects:
+    - name: alpaca-api-key
+      type: secret
+      env: ALPACA_API_KEY
+    - name: alpaca-secret-key
+      type: secret
+      env: ALPACA_SECRET_KEY
+    - name: mssql-password
+      type: secret
+      env: MSSQL_PASSWORD
+      optional: true
+
+healthCheck:
+  liveness:
+    path: /q/health/live
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    path: /q/health/ready
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+
+serviceAccount:
+  # Auto-derive from chart fullname when name is empty.
+  name: ""
+
+# Pod-level security context. Container-level overrides applied in deployment.yaml.
+podSecurityContext:
+  fsGroup: 100
+  runAsNonRoot: true
+  runAsUser: 100

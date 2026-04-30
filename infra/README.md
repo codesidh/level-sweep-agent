@@ -42,10 +42,33 @@ This is a one-time, operator-run flow. CI does not apply — only validates.
    az keyvault secret set --vault-name "$KV_NAME" --name anthropic-api-key    --value "$ANTHROPIC_API_KEY"
    az keyvault secret set --vault-name "$KV_NAME" --name trading-economics-api-key --value "$TRADING_ECONOMICS_API_KEY"
    ```
-7. Configure GitHub repo secrets (Settings → Secrets and variables → Actions):
+7. Configure GitHub **repo** secrets (Settings → Secrets and variables → Actions),
+   used by `main.yml` for ACR push:
    - `AZURE_CLIENT_ID`       = `terraform output -raw gha_client_id`
    - `AZURE_TENANT_ID`       = `terraform output -raw tenant_id`
    - `AZURE_SUBSCRIPTION_ID` = `az account show --query id -o tsv`
+   - `ACR_LOGIN_SERVER`      = `terraform output -raw acr_login_server`
+   - `ACR_NAME`              = `terraform output -raw acr_name`
+
+   And configure the GitHub **environment** `dev` (Settings → Environments → New
+   environment → `dev`) with the secrets `deploy-dev.yml` consumes:
+
+   | Secret                                  | Source                                                          |
+   | --------------------------------------- | --------------------------------------------------------------- |
+   | `AZURE_CLIENT_ID`                       | `terraform output -raw gha_client_id`                           |
+   | `AZURE_TENANT_ID`                       | `terraform output -raw tenant_id`                               |
+   | `AZURE_SUBSCRIPTION_ID`                 | `az account show --query id -o tsv`                             |
+   | `AKS_CLUSTER_NAME`                      | `terraform output -raw aks_cluster_name`                        |
+   | `AKS_RESOURCE_GROUP`                    | `terraform output -raw aks_resource_group`                      |
+   | `AKS_KUBELET_CLIENT_ID`                 | `terraform output -raw aks_kubelet_client_id`                   |
+   | `ACR_LOGIN_SERVER`                      | `terraform output -raw acr_login_server`                        |
+   | `KEY_VAULT_NAME`                        | `terraform output -raw key_vault_name`                          |
+   | `KEY_VAULT_URI`                         | `terraform output -raw key_vault_uri`                           |
+   | `APPLICATIONINSIGHTS_CONNECTION_STRING` | `terraform output -raw app_insights_connection_string`          |
+
+   Optional environment **variable** (not a secret):
+   - `AZURE_REGION` — defaults to `eastus` if unset; controls the App Insights
+     ingest endpoint OTel exporters use.
 8. Add the egress IP to external service allowlists:
    ```bash
    terraform output -raw nat_egress_ip

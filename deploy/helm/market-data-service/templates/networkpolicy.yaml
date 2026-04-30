@@ -1,0 +1,63 @@
+{{- if .Values.networkPolicy.enabled }}
+# =============================================================================
+# Phase 1 NetworkPolicy. Permissive but non-zero: deny everything except
+# (a) ingress from the same namespace to the HTTP port, (b) egress to DNS,
+# (c) egress to 443 anywhere (for Alpaca, Anthropic, Trading Economics, KV
+# CSI, App Insights). Phase 7 tightens egress to specific FQDNs / Azure
+# service tags via Cilium netpol or AKS-managed NPM.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "market-data-service.fullname" . }}
+  labels:
+    {{- include "market-data-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "market-data-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - port: {{ .Values.service.port }}
+          protocol: TCP
+  egress:
+    # DNS — kube-dns lives in kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # HTTPS to anywhere — Alpaca, Anthropic, Trading Economics, KV CSI driver,
+    # App Insights ingest.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+    # Kafka brokers + Mongo + MS SQL on intra-cluster service ports — the
+    # Phase 6 Strimzi cluster lives in this same namespace, so allow same-ns
+    # egress on the relevant ports without overcommitting the policy.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - port: 9092
+          protocol: TCP
+        - port: 27017
+          protocol: TCP
+        - port: 1433
+          protocol: TCP
+{{- end }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: market-data-service
+description: Phase 1 market data ingest + bar/indicator pipeline
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
