@@ -60,8 +60,7 @@ public class MarketDataReadinessCheck implements HealthCheck {
         if (cfg.apiKey().isBlank()) {
             // Idle mode — by-design ready. The pipeline still serves the in-process
             // replay path; operators distinguish idle from live via the metrics gauge.
-            return b.up()
-                    .withData("mode", "idle")
+            return b.up().withData("mode", "idle")
                     .withData("connectionState", state.name())
                     .build();
         }
@@ -74,8 +73,7 @@ public class MarketDataReadinessCheck implements HealthCheck {
                     .build();
         }
 
-        return b.up()
-                .withData("mode", "live")
+        return b.up().withData("mode", "live")
                 .withData("connectionState", state.name())
                 .withData("wsAttached", pipeline.wsAttached())
                 .build();

@@ -54,8 +54,7 @@ public class MarketDataLivenessCheck implements HealthCheck {
             // because @ApplicationScoped beans are always non-null at injection time.
             return b.down().withData("reason", "pipeline-not-wired").build();
         }
-        return b.up()
-                .withData("ringBufferSize", pipeline.tickRingBuffer().size())
+        return b.up().withData("ringBufferSize", pipeline.tickRingBuffer().size())
                 .withData("offeredCount", pipeline.tickRingBuffer().offeredCount())
                 .build();
     }
