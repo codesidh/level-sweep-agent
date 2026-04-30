@@ -128,7 +128,9 @@ class LivePipelineTest {
 
         awaitUntil(() -> !captured.isEmpty(), 5_000L);
 
-        assertThat(captured).as("registered listener should receive bars from fan-out").isNotEmpty();
+        assertThat(captured)
+                .as("registered listener should receive bars from fan-out")
+                .isNotEmpty();
         assertThat(throwerInvocations.get())
                 .as("the throwing listener was invoked but its failure did not block the next listener")
                 .isPositive();

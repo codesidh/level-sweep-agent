@@ -105,7 +105,9 @@ public class MongoBarRepository {
                     new IndexOptions().unique(true).name("uniq_tenant_symbol_timeframe_openTime"));
             coll.createIndex(
                     Indexes.ascending("insertedAt"),
-                    new IndexOptions().expireAfter(TTL_SECONDS, TimeUnit.SECONDS).name("ttl_inserted_at"));
+                    new IndexOptions()
+                            .expireAfter(TTL_SECONDS, TimeUnit.SECONDS)
+                            .name("ttl_inserted_at"));
         } catch (RuntimeException e) {
             // If Mongo is unreachable at the moment of first write, reset the flag so a
             // later write retries. Persistent failure is logged at warn.
