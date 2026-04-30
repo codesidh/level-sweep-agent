@@ -57,12 +57,7 @@ public final class SyntheticSessionGenerator {
      * supplies the start and end instants explicitly.
      */
     public static List<Tick> generateRandomWalk(
-            String symbol,
-            Instant start,
-            Instant end,
-            double openPrice,
-            long seed,
-            int tickIntervalSeconds) {
+            String symbol, Instant start, Instant end, double openPrice, long seed, int tickIntervalSeconds) {
         if (!start.isBefore(end)) {
             throw new IllegalArgumentException("start must be before end");
         }

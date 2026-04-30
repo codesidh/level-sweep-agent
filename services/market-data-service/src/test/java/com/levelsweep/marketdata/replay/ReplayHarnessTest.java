@@ -66,10 +66,15 @@ class ReplayHarnessTest {
     @Test
     void barsEmittedForAllTimeframes() {
         DataLayerPipeline p = run("SPY", NORMAL_DAY, 594.0);
-        long oneMin = p.capturedBars().stream().filter(b -> b.timeframe() == Timeframe.ONE_MIN).count();
-        long twoMin = p.capturedBars().stream().filter(b -> b.timeframe() == Timeframe.TWO_MIN).count();
-        long fifteenMin =
-                p.capturedBars().stream().filter(b -> b.timeframe() == Timeframe.FIFTEEN_MIN).count();
+        long oneMin = p.capturedBars().stream()
+                .filter(b -> b.timeframe() == Timeframe.ONE_MIN)
+                .count();
+        long twoMin = p.capturedBars().stream()
+                .filter(b -> b.timeframe() == Timeframe.TWO_MIN)
+                .count();
+        long fifteenMin = p.capturedBars().stream()
+                .filter(b -> b.timeframe() == Timeframe.FIFTEEN_MIN)
+                .count();
         // RTH session is 6.5 hours = 390 minutes. 1m bars are produced per minute with ticks.
         // With tickInterval=30s we have 2 ticks per minute → ~390 1m bars expected.
         // The first bar is in-flight until a tick crosses the boundary, so 389-390 bars.
@@ -100,8 +105,8 @@ class ReplayHarnessTest {
                 .filter(b -> SessionWindows.rth(LocalDate.of(2026, 4, 29)).contains(b.openTime()))
                 .toList();
         // Run overnight
-        List<Tick> overnightTicks = SyntheticSessionGenerator.generateOvernightSession(
-                "SPY", NORMAL_DAY, 594.5, SEED + 1, 30);
+        List<Tick> overnightTicks =
+                SyntheticSessionGenerator.generateOvernightSession("SPY", NORMAL_DAY, 594.5, SEED + 1, 30);
         DataLayerPipeline overnight = new DataLayerPipeline("SPY", NY);
         for (Tick t : overnightTicks) {
             overnight.onTick(t);
@@ -111,8 +116,7 @@ class ReplayHarnessTest {
                 .filter(b -> b.timeframe() == Timeframe.ONE_MIN)
                 .toList();
         // Compute levels
-        Levels levels =
-                LevelCalculator.compute("OWNER", "SPY", NORMAL_DAY, rthOneMin, overnightOneMin);
+        Levels levels = LevelCalculator.compute("OWNER", "SPY", NORMAL_DAY, rthOneMin, overnightOneMin);
         assertThat(levels.pdh().compareTo(levels.pdl())).isPositive();
         assertThat(levels.pmh().compareTo(levels.pml())).isPositive();
         assertThat(levels.tenantId()).isEqualTo("OWNER");
