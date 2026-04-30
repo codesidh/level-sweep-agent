@@ -51,3 +51,13 @@ levelsweep:
     mdc-keys:
       - tenant_id
       - trace_id
+
+# Alpaca market-data adapter — see com.levelsweep.marketdata.alpaca.AlpacaConfig.
+# api-key / secret-key MUST be supplied via env (Azure Key Vault → secrets in non-dev).
+# Blank api-key is the dev/replay default; LivePipeline logs a WARN and skips WS connect.
+alpaca:
+  feed: "${ALPACA_FEED:sip}"
+  api-key: "${ALPACA_API_KEY:}"
+  secret-key: "${ALPACA_SECRET_KEY:}"
+  symbols: "${ALPACA_SYMBOLS:SPY}"
+  ring-buffer-capacity: 300000
