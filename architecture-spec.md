@@ -1,8 +1,10 @@
 # LevelSweepAgent — Architecture Specification
 
-**Version**: 2.1
+**Version**: 2.2
 **Companion to**: `requirements.md` v1.0
 **Status**: Locked for Phase A (single-tenant); Phase B gated on legal review
+
+**v2.2 changelog**: time-zone discipline (§5 #10, §10.1), latency-budget header clarified (§14), per-table retention column (§13.1), Anthropic 4xx/5xx/529 explicit failure modes (§4.9), JIT warm-up scope clarified (§12.3), CLAUDE.md glossary expansion.
 
 ---
 
@@ -205,13 +207,18 @@ Prompt caching (system prompt + tool defs + recent context) reduces this by ~70%
 
 | Failure | Behavior |
 |---|---|
-| Anthropic API down | Sentinel → ALLOW; Narrator → queue+retry; Assistant → graceful error |
-| Sentinel returns malformed JSON | Default ALLOW; alert |
+| Anthropic API completely down (DNS/TCP) | Sentinel → ALLOW; Narrator → queue+retry; Assistant → graceful error |
+| Anthropic `429` rate-limited | CB opens; Sentinel → ALLOW until recovered; SDK auto-retry **disabled** for Sentinel (fail-open faster), enabled for Narrator/Reviewer |
+| Anthropic `529` overloaded (common at 09:30 ET burst) | Sentinel → ALLOW immediately; Narrator/Reviewer queue with exponential backoff |
+| Anthropic `503` service-unavailable | Same as 529 |
+| Anthropic `400 prompt_too_long` | Truncate via `recall_memory` summary path; if still too long → skip with alert |
+| Anthropic `4xx invalid_request_error` (other) | No retry; alert (likely tool-definition or schema regression) |
+| Sentinel returns malformed JSON / non-tool-call response | Default ALLOW; alert |
 | Sentinel exceeds 30s budget | Default ALLOW; latency alert |
-| Anthropic rate-limited | CB opens; default ALLOW until recovered |
 | Cost cap breached | Sentinel ALLOW, Narrator+Reviewer skip, Assistant disabled until 00:00 ET |
 | Memory store down | Stateless mode (no personalization); chat warns user |
 | Tool call returns error | Agent gets error in tool result; can retry once or report to user |
+| Streaming response interrupted mid-stream | Reconcile partial `output_tokens` with budget; surface partial response to user with warning |
 
 ### 4.10 Observability for AI
 
@@ -251,6 +258,7 @@ The agent is positioned as a **strategy executor and explainer**, not an advisor
 7. **Observability is a first-class feature**: every decision (and non-decision) is logged with full input context.
 8. **Multi-tenant-ready from line 1**: no shortcut allowed.
 9. **AI is advisory, not authoritative on order placement**: deterministic core remains the order-path source of truth.
+10. **Time discipline**: all scheduling and FSM time gates use `ZoneId.of("America/New_York")` (not fixed-offset EST). Timestamps persisted as UTC `Instant` plus ET local time on every audit row. JVM `tzdata` kept current. Replay set must include both spring-forward and fall-back DST sessions.
 
 ---
 
@@ -374,6 +382,7 @@ Cross-cutting:
 - **Partition key**: `symbol`
 - **Critical SLO**: bar publication ≤ 100ms post-close
 - **State**: stateless (replays from Polygon REST on cold start)
+- **Backpressure**: WS handler is non-blocking. Inbound ticks land in a 5-min SQLite ring buffer; Mongo `bars_raw` writes are async batched. If buffer fills (e.g., 09:29:30 ET FOMC burst at 50k+ ticks/sec), oldest non-canonical ticks are dropped with an alert; canonical 1-min OHLC reconstruction is available from Polygon REST as a backstop.
 
 ### 9.2 Decision Engine
 - **Hosts** (in-process): Indicator Engine + Signal Engine + Risk Manager + Strike Selector + Trade Saga Orchestrator
@@ -409,7 +418,7 @@ Cross-cutting:
   - Submit market orders with deterministic `client_order_id = sha256(tenant_id|trade_id|action)`
   - Subscribe to Alpaca trade-update stream; emit `tenant.fills`
   - Stop Watcher: subscribes to `market.bars.2m`; evaluates §9 stop trigger
-  - Trailing Manager: subscribes to held option's NBBO; tracks trailing floor per §10 of req
+  - Trailing Manager: subscribes to held option's NBBO; tracks trailing floor per §10 of req. **Trail evaluation uses last NBBO mid** (not bid or ask). Ratchet update requires a *sustained* move — exact "sustained" definition deferred to Phase 3 build (per §22 #2); default placeholder: NBBO mid above current floor for ≥ 3 consecutive 1-second snapshots
   - EOD Watcher: 15:55 ET force-flatten
 - **Topics published**: `tenant.fills`, `tenant.events.exit_triggered`
 - **Idempotency**: deterministic client-order-id; duplicates rejected by Alpaca
@@ -422,6 +431,9 @@ Cross-cutting:
 All FSMs persisted (MS SQL) on every transition; transitions are append-only events that double as audit trail.
 
 ### 10.1 Session FSM (per tenant per trading day)
+
+> All times below are **local to `America/New_York`** (per Architecture Principle #10). DST transitions are handled by JVM `tzdata`; replay set must include a spring-forward and a fall-back session.
+
 ```
 PRE_OPEN
   └─[09:00 ET]─▶ ARMING (warmup, levels, equity, calendar)
@@ -532,14 +544,27 @@ The Trade Saga is **stateless across requests** but **stateful per saga instance
 - **Phase A**: 1 instance per service is sufficient
 - **Phase B**: scale instances up to partition count
 
-### 12.3 Thundering-herd defenses
+### 12.3 Consumer / producer config baseline
+
+| Setting | Value | Reason |
+|---|---|---|
+| `partition.assignment.strategy` | `cooperative-sticky` | Prevents wholesale rebalance during Sentinel's 30s parked wait |
+| `max.poll.interval.ms` | `120000` (2 min) | Accommodates worst-case Sentinel timeout + saga step |
+| `enable.idempotence` (producer) | `true` | Per §17.3 |
+| `acks` (producer) | `all` | Critical topics only (`tenant.commands`, `tenant.fills`, `tenant.events`) |
+| `max.in.flight.requests.per.connection` | `5` | Compatible with idempotent producer |
+| `session.timeout.ms` | `45000` | Tolerates GC pauses on JVM consumers |
+| `auto.offset.reset` | `earliest` for audit consumers; `latest` for hot-path consumers | Replay vs liveness |
+| `isolation.level` (consumer) | `read_committed` | Excludes aborted transactions on idempotent producers |
+
+### 12.4 Thundering-herd defenses
 
 - **Per-(tenant, symbol) partitioning** ensures one tenant's burst can't starve others
 - **Per-tenant rate limit** at APIM (e.g., 100 req/min/tenant on dashboard)
 - **Bulkhead pools** in each service per upstream tenant
 - **Request collapsing** on dashboard reads (cache 5s)
 - **Backpressure** at consumer: pause partition assignment when local queue exceeds threshold
-- **JIT warm-up** at 09:00 ET: synthetic traffic primes JIT before market open
+- **JIT warm-up** at 09:00 ET applies to **JVM-mode services only** (AI Agent Service, warm/cold pools running Spring Boot). Hot-path services (Market Data, Decision Engine, Execution) ship as **GraalVM native images** and have no JIT to warm
 - **AI cost cap**: per-tenant daily ceiling prevents runaway LLM cost
 
 ---
@@ -548,20 +573,22 @@ The Trade Saga is **stateless across requests** but **stateful per saga instance
 
 ### 13.1 MS SQL (system of record for financial state)
 
-| Table | Purpose |
-|---|---|
-| `tenants` | tenant master (`tenant_id`, name, status, plan) |
-| `users` | user accounts; mapped to Auth0 sub claim |
-| `tenant_configs` | per-tenant strategy params (risk %, position size %, profit target...) |
-| `alpaca_credentials` | OAuth tokens (encrypted with tenant key) |
-| `daily_state` | per-tenant per-day (start_equity, position_size, daily_budget, mode, halt_flag, levels) |
-| `trades` | one row per Trade FSM instance |
-| `orders` | broker orders (broker_order_id, client_order_id) |
-| `positions` | open position state per (tenant, symbol, contract) |
-| `fills` | append-only execution fills |
-| `risk_events` | append-only budget consumption |
-| `fsm_transitions` | append-only every FSM transition; basis for audit |
-| `agent_decisions` | Sentinel decisions (signal_id, decision, confidence, reasoning, latency, cost) |
+Retention sized to **SEC Rule 17a-4** (broker-dealer record-keeping: 6 years total, first 2 years readily accessible) so Phase A data is forward-compatible with Phase B compliance. Tables backed by **WORM-eligible storage tier** for the regulated subset.
+
+| Table | Purpose | Retention | WORM |
+|---|---|---|---|
+| `tenants` | tenant master | active life + 7y | no |
+| `users` | user accounts (Auth0 sub claim) | active life + 7y | no |
+| `tenant_configs` | per-tenant strategy params | append-only history; 7y | no |
+| `alpaca_credentials` | OAuth tokens (encrypted) | active token only | no |
+| `daily_state` | per-tenant per-day equity, budget, levels | 7y | no |
+| `trades` | one row per Trade FSM instance | **7y** | **yes** |
+| `orders` | broker orders | **7y** | **yes** |
+| `positions` | open position state per (tenant, symbol, contract) | **7y** | **yes** |
+| `fills` | append-only execution fills | **7y** | **yes** |
+| `risk_events` | append-only budget consumption | 7y | no |
+| `fsm_transitions` | every FSM transition; carries `fsm_version` for replay compatibility | 7y | yes |
+| `agent_decisions` | Sentinel decisions (decision, confidence, reasoning, latency, cost) | 7y | no |
 
 **Why MS SQL**: ACID, sync replication, point-in-time recovery, native Azure HA. Financial data must reconcile with broker; no eventual consistency.
 
@@ -608,20 +635,26 @@ If MS SQL write fails → saga retries; persistent failure → Risk FSM halts.
 
 ## 14. Latency Budget
 
-**SLO**: as fast as Alpaca will let us → P99 decision-to-fill ≤ 250ms (without Sentinel) / ≤ 1.5s (with Sentinel).
+**SLO** (P99, decision-emitted → order-submitted-to-Alpaca; Alpaca's broker-side fill latency is not included since we do not control it):
+- Without Sentinel: ≤ **250ms**
+- With Sentinel: ≤ **1.5s**
 
-| Hop | Without Sentinel | With Sentinel |
+Per-hop budgets below are **P50 / max budget** (ms). Hops are not strictly serial on the wire — async I/O and overlapping commits mean the totals are not arithmetic sums of per-hop P50s. Sentinel "P50 ≈ 800ms" is a Phase 1 measurement target, not a guarantee; we will record actuals during Phase 5.
+
+| Hop | Without Sentinel (P50 / max) | With Sentinel (P50 / max) |
 |---|---|---|
-| 2-min bar close → published | 100ms | 100ms |
-| Bar consumed by Decision Engine | 10ms | 10ms |
-| Indicator + Signal + Risk + Strike (in-process) | 20ms | 20ms |
-| **Sentinel call (entry only)** | n/a | 500ms–30s budget (typical 800ms with Haiku) |
-| `commands.entry` published | 5ms | 5ms |
-| Execution Service consumes | 10ms | 10ms |
-| Alpaca order submit (network + broker) | 100–200ms | 100–200ms |
-| **Total decision-to-fill** | **≤ 250ms typical** | **≤ 1.2s typical** |
+| 2-min bar close → published | 50 / 100 | 50 / 100 |
+| Bar consumed by Decision Engine | 5 / 10 | 5 / 10 |
+| Indicator + Signal + Risk + Strike (in-process) | 10 / 20 | 10 / 20 |
+| **Sentinel call (entry only — virtual thread parked)** | n/a | 800 / 30 000 |
+| `commands.entry` published | 2 / 5 | 2 / 5 |
+| Execution Service consumes | 5 / 10 | 5 / 10 |
+| Alpaca order submit (network only — excludes broker fill) | 80 / 200 | 80 / 200 |
+| **Decision-to-order-submitted (P99 SLO)** | **≤ 250** | **≤ 1500** |
 
-Stop-loss path is unchanged (no Sentinel) → ≤ 250ms always. Observed gaps wider than budget → alert; persistent breach → Risk FSM halts.
+**Stop-loss path is unchanged (no Sentinel) → ≤ 250ms always.** Observed gaps wider than budget → alert; persistent breach → Risk FSM halts.
+
+**Sentinel concurrency**: veto requests await on **virtual threads** (cheap to park 30s); platform threads are not blocked, so Decision Engine throughput is preserved during simultaneous signal evaluations.
 
 ### 14.1 Latency-driving choices
 
@@ -834,7 +867,7 @@ Dashboard "Connect Alpaca" ─▶ Alpaca authorize URL ─▶ user grants ─▶
 | **State Blue Sky** | N/A | **Required investigation** per state |
 | **Privacy / KYC** | N/A | Required (Auth0 KYC integration) |
 | **Risk disclosure** | N/A | Mandatory ToS + risk disclaimer |
-| **Audit retention** | 1 year | 7 years (broker-dealer typical) |
+| **Audit retention** | Per §13.1 — financial tables (orders/fills/trades/positions/fsm_transitions) sized at 7y from day 1 to be forward-compatible with broker-dealer requirements; ops logs at 90d | Same; SEC Rule 17a-4 WORM storage activated for regulated subset |
 | **SOC 2** | N/A | Type I baseline before launch |
 | **AI explainability (FINRA bulletins)** | N/A (private) | Logged reasoning + user-facing "why?" |
 | **AI as advice vs. execution** | Strategy executor only | ToS clarifies: agent operates user's chosen strategy, does not advise |

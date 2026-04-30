@@ -88,6 +88,18 @@ docker-compose up -d                  # local Kafka + Mongo + MS SQL
 | **RTH** | Regular Trading Hours (09:30–16:00 ET) |
 | **Sentinel** | Pre-Trade veto AI agent (Claude Haiku 4.5) |
 | **Saga** | Trade lifecycle orchestrator inside Decision Engine |
+| **NBBO** | National Best Bid and Offer |
+| **DLQ** | Dead-Letter Queue |
+| **BFF** | Backend-for-Frontend |
+| **OIDC** | OpenID Connect |
+| **RIA** | Registered Investment Adviser |
+| **BD** | Broker-Dealer |
+| **17a-4** | SEC rule mandating broker-dealer record retention (6+ years, WORM storage for first 2 years) |
+| **WORM** | Write-Once, Read-Many storage (compliance-grade immutable) |
+| **APIM** | Azure API Management |
+| **AKS** | Azure Kubernetes Service |
+| **ACR** | Azure Container Registry |
+| **B2C** | Business-to-Consumer (Auth0 / Azure AD flavor) |
 
 ## 🛡️ Skills
 

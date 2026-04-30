@@ -1,6 +1,6 @@
 ---
 name: ai-prompt-management
-description: Rules for Claude prompts, tool definitions, cost caps, and AI agent behavior. Use when writing or modifying any code that calls the Anthropic API, defines a Claude tool, or composes a prompt for Sentinel/Narrator/Assistant/Reviewer. Triggers on Anthropic, Claude, prompt, tool use, AI agent, sentinel, narrator, reviewer.
+description: Rules for Claude prompts, tool definitions, cost caps, and AI agent behavior. Use when writing or modifying any code that calls the Anthropic API, defines a Claude tool or tool definition, or composes a prompt for Sentinel/Narrator/Assistant/Reviewer. Triggers on Anthropic, Claude, prompt, tool use, tool definition, AI agent, sentinel, narrator, reviewer, daily reviewer.
 ---
 
 # AI Prompt & Agent Management
@@ -12,7 +12,11 @@ The AI is an executor and explainer of the user's pre-configured strategy. It is
 1. **Prompts versioned in git**: every system prompt and tool definition lives in `prompts/` directory. Hash logged on every call.
 2. **Anthropic prompt caching enabled**: system prompt + tool definitions + recent journal context tagged for caching. Target ≥ 70% cache hit rate.
 3. **Tool-use protocol**: structured outputs via Anthropic tool calls. Never parse free-text responses for control flow.
-4. **Per-tenant cost cap enforced** in code (not just monitoring). On breach: role degrades to no-op (Sentinel ALLOW; others skip).
+4. **Per-tenant cost cap enforced** in code (not just monitoring).
+   - **Pre-call**: reject if estimated cost (`prompt_tokens × in-rate + max_tokens × out-rate`) would exceed remaining budget.
+   - **Post-call**: reconcile with actual `response.usage` (input + output tokens, including cache read/write) and persist to `audit_log.ai_calls`.
+   - **Streaming**: accrue `input_tokens` at start, `output_tokens` on stream completion (including partial streams interrupted by error).
+   - **On breach**: role degrades to no-op (Sentinel ALLOW; Narrator/Reviewer skip; Assistant disabled) until 00:00 ET.
 5. **Confidence threshold for veto**: Sentinel vetoes only when `confidence ≥ 0.85`. Below threshold → ALLOW.
 6. **Fail-open for AI**: any AI error (timeout, malformed JSON, 5xx) → ALLOW. Deterministic engine remains conservative on its own.
 7. **Audit every call**: write to `audit_log.ai_calls` with role, model, prompt hash, tools invoked, response, tokens, cost, latency.

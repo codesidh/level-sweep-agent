@@ -1,6 +1,6 @@
 ---
 name: fsm-discipline
-description: Rules for state-machine implementation. Use when writing or reviewing code that manages session, trade, risk, order, position, or connection state. Triggers on FSM, state machine, transition, state, lifecycle terms.
+description: Rules for state-machine implementation. Use when writing or reviewing code that manages session, trade, risk, order, position, or connection state. Triggers on FSM, state machine, Session FSM, Trade FSM, Risk FSM, Order FSM, Position FSM, Connection FSM, transition, lifecycle.
 ---
 
 # FSM Discipline

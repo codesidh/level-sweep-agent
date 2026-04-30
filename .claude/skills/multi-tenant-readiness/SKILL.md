@@ -1,6 +1,6 @@
 ---
 name: multi-tenant-readiness
-description: Rules for tenant isolation. Use when designing or reviewing schema, Kafka topics, services, tools, tests. Triggers on tenant, multi-tenant, isolation, partition, scope.
+description: Rules for tenant isolation. Use when designing or reviewing schema, Kafka topics, services, tools, tests. Triggers on tenant, tenant_id, multi-tenant, tenant isolation, tenant scope, partition key, per-tenant.
 ---
 
 # Multi-Tenant Readiness

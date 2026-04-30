@@ -45,6 +45,15 @@ public class IndicatorEngine {
 4. Run `./gradlew replayTest --tests *.NewSessionReplayTest`
 5. If parity ≥ 99%, commit. If not, the session reveals a bug — fix before merging anything else.
 
+## Schema evolution rules (FSM enums + tables)
+
+Any change to FSM state enums or `fsm_transitions` schema must remain backward-compatible with recorded replay sessions:
+
+- New states/events: append-only ordinals; never reuse a removed ordinal.
+- Renaming a state/event requires a one-time migration script and full replay regeneration; bump `fsm_version` on every transition row.
+- Removing a state requires a deprecation period: states stay in code as `@Deprecated` until no replay session references them.
+- All `fsm_transitions` rows include `fsm_version` (current); replay harness skips sessions whose `fsm_version < min_supported`.
+
 ## Anti-patterns to flag
 
 - `Instant.now()` in indicator/signal/risk/strike code
@@ -53,3 +62,5 @@ public class IndicatorEngine {
 - Skipping replay test "because it's a small change"
 - Tolerances loosened to make a test pass
 - Non-deterministic ordering (use sorted collections in business logic)
+- Reusing an ordinal of a removed FSM state
+- DST-naive time math (`LocalDateTime.plus(...)` across DST boundaries — use `ZonedDateTime` with `America/New_York`)
