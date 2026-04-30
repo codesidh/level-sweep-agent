@@ -39,8 +39,8 @@ class AlpacaRestClientTest {
                   "symbol": "SPY"
                 }
                 """;
-        AlpacaRestClient client =
-                new AlpacaRestClient(stubCfg(), new ObjectMapper(), AlpacaRestClient.fromFunction(req -> okResponse(body)));
+        AlpacaRestClient client = new AlpacaRestClient(
+                stubCfg(), new ObjectMapper(), AlpacaRestClient.fromFunction(req -> okResponse(body)));
 
         List<Bar> bars = client.fetchHistoricalBars("SPY", Timeframe.TWO_MIN, START, END, 200);
 
@@ -65,8 +65,8 @@ class AlpacaRestClientTest {
     @Test
     void returnsEmptyListWhenBarsArrayIsEmpty() {
         String body = "{\"bars\": [], \"next_page_token\": null, \"symbol\": \"SPY\"}";
-        AlpacaRestClient client =
-                new AlpacaRestClient(stubCfg(), new ObjectMapper(), AlpacaRestClient.fromFunction(req -> okResponse(body)));
+        AlpacaRestClient client = new AlpacaRestClient(
+                stubCfg(), new ObjectMapper(), AlpacaRestClient.fromFunction(req -> okResponse(body)));
 
         List<Bar> bars = client.fetchHistoricalBars("SPY", Timeframe.TWO_MIN, START, END, 200);
 
@@ -104,7 +104,8 @@ class AlpacaRestClientTest {
         HttpResponse<String> resp = (HttpResponse<String>) mock(HttpResponse.class);
         when(resp.statusCode()).thenReturn(200);
         when(resp.body()).thenReturn("{\"bars\":[]}");
-        java.util.concurrent.atomic.AtomicReference<HttpRequest> captured = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<HttpRequest> captured =
+                new java.util.concurrent.atomic.AtomicReference<>();
         AlpacaRestClient.Fetcher fetcher = req -> {
             captured.set(req);
             return resp;

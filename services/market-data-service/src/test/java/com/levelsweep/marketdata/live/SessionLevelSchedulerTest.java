@@ -90,8 +90,7 @@ class SessionLevelSchedulerTest {
         LevelsRepository levels = mock(LevelsRepository.class);
         AlpacaConfig cfg = stubCfg();
 
-        List<Bar> rthBars =
-                List.of(bar("SPY", "2026-04-29T13:30:00Z", "594.00", "595.00", "593.50", "594.50"));
+        List<Bar> rthBars = List.of(bar("SPY", "2026-04-29T13:30:00Z", "594.00", "595.00", "593.50", "594.50"));
         when(bars.findBarsByWindow(eq("OWNER"), eq("SPY"), eq(Timeframe.ONE_MIN), any(), any()))
                 .thenReturn(rthBars, Collections.emptyList());
 
@@ -107,10 +106,8 @@ class SessionLevelSchedulerTest {
         LevelsRepository levels = mock(LevelsRepository.class);
         AlpacaConfig cfg = stubCfg();
 
-        List<Bar> rthBars =
-                List.of(bar("SPY", "2026-04-29T13:30:00Z", "594.00", "595.00", "593.50", "594.50"));
-        List<Bar> overnightBars =
-                List.of(bar("SPY", "2026-04-30T13:00:00Z", "595.00", "596.50", "594.80", "596.20"));
+        List<Bar> rthBars = List.of(bar("SPY", "2026-04-29T13:30:00Z", "594.00", "595.00", "593.50", "594.50"));
+        List<Bar> overnightBars = List.of(bar("SPY", "2026-04-30T13:00:00Z", "595.00", "596.50", "594.80", "596.20"));
         when(bars.findBarsByWindow(eq("OWNER"), eq("SPY"), eq(Timeframe.ONE_MIN), any(), any()))
                 .thenReturn(rthBars, overnightBars);
         doThrow(new RuntimeException("mssql down")).when(levels).upsert(any(Levels.class));
@@ -129,10 +126,8 @@ class SessionLevelSchedulerTest {
         LevelsRepository levels = mock(LevelsRepository.class);
         AlpacaConfig cfg = stubCfg();
 
-        List<Bar> rthBars =
-                List.of(bar("SPY", "2026-04-29T13:30:00Z", "594.00", "595.00", "593.50", "594.50"));
-        List<Bar> overnightBars =
-                List.of(bar("SPY", "2026-04-30T13:00:00Z", "595.00", "596.50", "594.80", "596.20"));
+        List<Bar> rthBars = List.of(bar("SPY", "2026-04-29T13:30:00Z", "594.00", "595.00", "593.50", "594.50"));
+        List<Bar> overnightBars = List.of(bar("SPY", "2026-04-30T13:00:00Z", "595.00", "596.50", "594.80", "596.20"));
         when(bars.findBarsByWindow(eq("tenant-xyz"), eq("SPY"), eq(Timeframe.ONE_MIN), any(), any()))
                 .thenReturn(rthBars, overnightBars);
 

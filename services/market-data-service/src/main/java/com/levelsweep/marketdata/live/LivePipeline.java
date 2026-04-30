@@ -306,8 +306,7 @@ public class LivePipeline {
         Instant start = now.minus(PREWARM_LOOKBACK);
         long t0 = System.currentTimeMillis();
         try {
-            List<Bar> historical =
-                    restClient.fetchHistoricalBars(symbol, Timeframe.TWO_MIN, start, now, PREWARM_LIMIT);
+            List<Bar> historical = restClient.fetchHistoricalBars(symbol, Timeframe.TWO_MIN, start, now, PREWARM_LIMIT);
             int seeded = 0;
             for (Bar bar : historical) {
                 // Pre-warm bars are fed directly into the indicator engine — the aggregator
@@ -324,7 +323,11 @@ public class LivePipeline {
                 LOG.warn("prewarm slow: {} ms (threshold {} ms)", elapsed, PREWARM_SLOW_MILLIS);
             }
             if (seeded == 0) {
-                LOG.warn("prewarm fetched 0 bars for symbol={} window=[{}, {}) — EMA windows remain cold", symbol, start, now);
+                LOG.warn(
+                        "prewarm fetched 0 bars for symbol={} window=[{}, {}) — EMA windows remain cold",
+                        symbol,
+                        start,
+                        now);
                 return;
             }
             LOG.info(
