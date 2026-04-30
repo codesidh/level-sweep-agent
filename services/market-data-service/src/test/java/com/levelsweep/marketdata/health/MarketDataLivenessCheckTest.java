@@ -3,12 +3,9 @@ package com.levelsweep.marketdata.health;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.levelsweep.marketdata.alpaca.AlpacaConfig;
-import com.levelsweep.marketdata.buffer.TickRingBuffer;
-import com.levelsweep.marketdata.connection.ConnectionMonitor;
 import com.levelsweep.marketdata.live.LivePipeline;
 import com.levelsweep.shared.domain.marketdata.Tick;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -24,11 +21,13 @@ class MarketDataLivenessCheckTest {
     @Test
     void livenessAlwaysUpWhenPipelineConstructed() {
         AlpacaConfig cfg = new StubAlpacaConfig("");
-        TickRingBuffer buffer = new TickRingBuffer(1000);
-        LivePipeline pipeline = new LivePipeline(cfg, buffer, new ConnectionMonitor("alpaca-ws", Clock.systemUTC()));
+        // Use the public single-arg constructor — LivePipeline owns its buffer + monitor.
+        // The 3-arg test seam is package-private and only visible from inside `marketdata.live`.
+        LivePipeline pipeline = new LivePipeline(cfg);
 
         // Push a tick so offeredCount is observably non-zero in the response data.
-        buffer.offer(new Tick("SPY", new BigDecimal("594.00"), 100L, Instant.parse("2026-04-30T13:30:00Z")));
+        pipeline.tickRingBuffer()
+                .offer(new Tick("SPY", new BigDecimal("594.00"), 100L, Instant.parse("2026-04-30T13:30:00Z")));
 
         MarketDataLivenessCheck check = new MarketDataLivenessCheck(pipeline);
         HealthCheckResponse response = check.call();

@@ -3,28 +3,27 @@ package com.levelsweep.marketdata.health;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.levelsweep.marketdata.alpaca.AlpacaConfig;
-import com.levelsweep.marketdata.buffer.TickRingBuffer;
-import com.levelsweep.marketdata.connection.ConnectionMonitor;
 import com.levelsweep.marketdata.connection.ConnectionState;
 import com.levelsweep.marketdata.live.LivePipeline;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import org.eclipse.microprofile.health.HealthCheckResponse;
 import org.junit.jupiter.api.Test;
 
 /**
- * Plain-JUnit unit tests for {@link MarketDataReadinessCheck}. Stubs the FSM via
- * {@link ConnectionMonitor#recordError(Throwable)} to drive the threshold-based
- * UNHEALTHY transition without reflection.
+ * Plain-JUnit unit tests for {@link MarketDataReadinessCheck}. Drives the FSM
+ * by recording errors against the {@code ConnectionMonitor} owned by the pipeline
+ * (exposed via the public {@code connectionMonitor()} getter) — no reflection
+ * required.
  */
 class MarketDataReadinessCheckTest {
 
     @Test
     void idleModeIsReady() {
         AlpacaConfig cfg = new StubAlpacaConfig("");
-        ConnectionMonitor monitor = new ConnectionMonitor("alpaca-ws", Clock.systemUTC());
-        LivePipeline pipeline = new LivePipeline(cfg, new TickRingBuffer(1000), monitor);
+        // Use the public single-arg constructor — the package-private 3-arg test seam
+        // is only accessible from inside `marketdata.live`.
+        LivePipeline pipeline = new LivePipeline(cfg);
 
         HealthCheckResponse response = new MarketDataReadinessCheck(pipeline, cfg).call();
 
@@ -38,14 +37,13 @@ class MarketDataReadinessCheckTest {
     @Test
     void unhealthyFsmIsDown() {
         AlpacaConfig cfg = new StubAlpacaConfig("AKxxxx");
-        ConnectionMonitor monitor = new ConnectionMonitor("alpaca-ws", Clock.systemUTC());
-        LivePipeline pipeline = new LivePipeline(cfg, new TickRingBuffer(1000), monitor);
+        LivePipeline pipeline = new LivePipeline(cfg);
 
         // 5 errors within the default 30s window force UNHEALTHY (circuit-breaker open).
         for (int i = 0; i < 5; i++) {
-            monitor.recordError(new RuntimeException("test"));
+            pipeline.connectionMonitor().recordError(new RuntimeException("test"));
         }
-        assertThat(monitor.state())
+        assertThat(pipeline.connectionMonitor().state())
                 .as("test setup: monitor should be UNHEALTHY after 5 consecutive errors")
                 .isEqualTo(ConnectionState.UNHEALTHY);
 
@@ -61,8 +59,7 @@ class MarketDataReadinessCheckTest {
     @Test
     void healthyLiveIsReady() {
         AlpacaConfig cfg = new StubAlpacaConfig("AKxxxx");
-        ConnectionMonitor monitor = new ConnectionMonitor("alpaca-ws", Clock.systemUTC());
-        LivePipeline pipeline = new LivePipeline(cfg, new TickRingBuffer(1000), monitor);
+        LivePipeline pipeline = new LivePipeline(cfg);
 
         HealthCheckResponse response = new MarketDataReadinessCheck(pipeline, cfg).call();
 
@@ -76,14 +73,13 @@ class MarketDataReadinessCheckTest {
     @Test
     void degradedFsmIsStillReady() {
         AlpacaConfig cfg = new StubAlpacaConfig("AKxxxx");
-        ConnectionMonitor monitor = new ConnectionMonitor("alpaca-ws", Clock.systemUTC());
-        LivePipeline pipeline = new LivePipeline(cfg, new TickRingBuffer(1000), monitor);
+        LivePipeline pipeline = new LivePipeline(cfg);
 
         // 3 errors within the window cross the DEGRADED threshold; UNHEALTHY needs 5.
         for (int i = 0; i < 3; i++) {
-            monitor.recordError(new RuntimeException("test"));
+            pipeline.connectionMonitor().recordError(new RuntimeException("test"));
         }
-        assertThat(monitor.state())
+        assertThat(pipeline.connectionMonitor().state())
                 .as("test setup: monitor should be DEGRADED after 3 errors")
                 .isEqualTo(ConnectionState.DEGRADED);
 
