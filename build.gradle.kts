@@ -39,8 +39,8 @@ subprojects {
                 "-Xlint:all",
                 "-Xlint:-serial",
                 "-Xlint:-processing",
-                "-parameters"
-            )
+                "-parameters",
+            ),
         )
     }
 
