@@ -1,0 +1,227 @@
+# =============================================================================
+# Alpaca Market Data WebSocket smoke test.
+# Manual-trigger only. Uses ALPACA_API_KEY + ALPACA_SECRET_KEY at GitHub
+# Environment scope to verify both REST account access and WS subscription
+# end-to-end.
+#
+# Default WS URL is the free IEX feed — works on any Alpaca account, real-time
+# but only IEX-exchange volume (~3% of US trading). Switch to v2/sip in the
+# input to test the paid consolidated SIP feed.
+#
+# Trigger:  gh workflow run alpaca-smoke-test.yml -R codesidh/level-sweep-agent
+# =============================================================================
+name: alpaca-smoke-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "GitHub Environment scope"
+        required: true
+        default: "dev"
+        type: choice
+        options: [dev, prod]
+      ws_url:
+        description: "Alpaca WebSocket endpoint"
+        required: true
+        default: "wss://stream.data.alpaca.markets/v2/iex"
+        type: choice
+        options:
+          - "wss://stream.data.alpaca.markets/v2/iex"
+          - "wss://stream.data.alpaca.markets/v2/sip"
+          - "wss://stream.data.sandbox.alpaca.markets/v2/iex"
+          - "wss://stream.data.sandbox.alpaca.markets/v2/sip"
+      account_type:
+        description: "Trading account type for REST diagnostic"
+        required: true
+        default: "paper"
+        type: choice
+        options: [paper, live]
+      ticker:
+        description: "Symbol (e.g., SPY)"
+        required: true
+        default: "SPY"
+        type: string
+      duration_sec:
+        description: "Listen duration in seconds"
+        required: true
+        default: "30"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: alpaca-ws-smoke
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install ws
+        run: npm install --no-save ws
+
+      - name: Sanity check secrets
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: |
+          missing=0
+          if [ -z "$ALPACA_API_KEY" ]; then
+            echo "::error::ALPACA_API_KEY secret not set on '${{ inputs.environment }}' env scope"
+            missing=1
+          fi
+          if [ -z "$ALPACA_SECRET_KEY" ]; then
+            echo "::error::ALPACA_SECRET_KEY secret not set on '${{ inputs.environment }}' env scope"
+            missing=1
+          fi
+          if [ "$missing" = "1" ]; then exit 1; fi
+          echo "✓ both secrets present at env scope"
+
+      # ─────────────────────────────────────────────────────────────
+      # REST diagnostic — proves keys are valid before testing WS.
+      # /v2/account on paper-api or api: 200 = keys valid, 401 = bad keys
+      # /v2/stocks/SPY/bars: confirms market data REST works
+      # ─────────────────────────────────────────────────────────────
+      - name: REST diagnostic — account
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: |
+          if [ "${{ inputs.account_type }}" = "paper" ]; then
+            base="https://paper-api.alpaca.markets"
+          else
+            base="https://api.alpaca.markets"
+          fi
+          echo "→ GET $base/v2/account"
+          response=$(curl -sS -w "\n__HTTP__:%{http_code}\n" \
+            -H "APCA-API-KEY-ID: $ALPACA_API_KEY" \
+            -H "APCA-API-SECRET-KEY: $ALPACA_SECRET_KEY" \
+            "$base/v2/account")
+          # Redact account_number / id-like long alphanums in the output
+          echo "$response" | sed -E 's/"(account_number|id)":"[^"]*"/"\1":"REDACTED"/g'
+
+      - name: REST diagnostic — market data /v2/stocks/SPY/bars
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: |
+          echo "→ GET data.alpaca.markets/v2/stocks/SPY/bars (1Day, limit=1)"
+          curl -sS -w "\n__HTTP__:%{http_code}\n" \
+            -H "APCA-API-KEY-ID: $ALPACA_API_KEY" \
+            -H "APCA-API-SECRET-KEY: $ALPACA_SECRET_KEY" \
+            "https://data.alpaca.markets/v2/stocks/SPY/bars?timeframe=1Day&limit=1"
+
+      - name: WS smoke — connect, auth, subscribe, log first messages
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          WS_URL: ${{ inputs.ws_url }}
+          TICKER: ${{ inputs.ticker }}
+          DURATION_SEC: ${{ inputs.duration_sec }}
+        run: |
+          node <<'EOF'
+          const WebSocket = require('ws');
+          const url = process.env.WS_URL;
+          const ticker = process.env.TICKER;
+          const duration = parseInt(process.env.DURATION_SEC, 10) * 1000;
+
+          console.log(`→ connecting to ${url}`);
+          const ws = new WebSocket(url);
+
+          let connected = false;
+          let authenticated = false;
+          let subscribed = false;
+          let trades = 0;
+          let quotes = 0;
+          let bars = 0;
+          let printed = 0;
+
+          const startedAt = Date.now();
+          setTimeout(() => {
+            console.log(`\n=== SUMMARY (${(duration/1000)|0}s) ===`);
+            console.log(`connected:        ${connected}`);
+            console.log(`authenticated:    ${authenticated}`);
+            console.log(`subscribed:       ${subscribed}`);
+            console.log(`trades received:  ${trades}`);
+            console.log(`quotes received:  ${quotes}`);
+            console.log(`bars received:    ${bars}`);
+            console.log(`elapsed (ms):     ${Date.now() - startedAt}`);
+            try { ws.close(); } catch (_) {}
+            process.exit(authenticated ? 0 : 1);
+          }, duration);
+
+          ws.on('open', () => {
+            console.log('  ✓ socket open');
+            ws.send(JSON.stringify({
+              action: 'auth',
+              key: process.env.ALPACA_API_KEY,
+              secret: process.env.ALPACA_SECRET_KEY,
+            }));
+          });
+
+          function trySubscribe() {
+            console.log(`  → subscribing trades=${ticker}, quotes=${ticker}, bars=${ticker}`);
+            ws.send(JSON.stringify({
+              action: 'subscribe',
+              trades: [ticker],
+              quotes: [ticker],
+              bars: [ticker],
+            }));
+          }
+
+          ws.on('message', (raw) => {
+            const text = raw.toString();
+            let msgs;
+            try { msgs = JSON.parse(text); } catch (e) {
+              console.log(`unparseable: ${text.substring(0, 200)}`);
+              return;
+            }
+            if (!Array.isArray(msgs)) msgs = [msgs];
+            for (const m of msgs) {
+              if (m.T === 'success') {
+                console.log(`  [success] ${m.msg}`);
+                if (m.msg === 'connected') connected = true;
+                if (m.msg === 'authenticated') {
+                  authenticated = true;
+                  trySubscribe();
+                }
+              } else if (m.T === 'subscription') {
+                subscribed = true;
+                console.log(
+                  `  [subscription] trades=${(m.trades || []).join(',')} ` +
+                  `quotes=${(m.quotes || []).join(',')} bars=${(m.bars || []).join(',')}`
+                );
+              } else if (m.T === 'error') {
+                console.log(`  [error] code=${m.code} msg=${m.msg}`);
+              } else if (m.T === 't') {
+                trades++;
+                if (printed < 5) {
+                  printed++;
+                  console.log(`  [trade #${trades}] ${m.S} @ ${m.p} sz=${m.s} x=${m.x} t=${m.t}`);
+                }
+              } else if (m.T === 'q') {
+                quotes++;
+                if (printed < 8 && quotes <= 3) {
+                  printed++;
+                  console.log(`  [quote] ${m.S} bid=${m.bp}@${m.bs} ask=${m.ap}@${m.as} t=${m.t}`);
+                }
+              } else if (m.T === 'b') {
+                bars++;
+                if (printed < 10 && bars <= 2) {
+                  printed++;
+                  console.log(`  [bar] ${m.S} o=${m.o} h=${m.h} l=${m.l} c=${m.c} v=${m.v} t=${m.t}`);
+                }
+              }
+            }
+          });
+
+          ws.on('error', (e) => console.error(`::error::ws error: ${e.message}`));
+          ws.on('close', (code, reason) =>
+            console.log(`  ⤫ socket closed: code=${code} reason=${reason || '(none)'}`)
+          );
+          EOF
