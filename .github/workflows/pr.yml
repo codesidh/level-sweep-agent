@@ -61,9 +61,13 @@ jobs:
       - name: Spotless apply (Palantir Java + ktlint)
         run: ./gradlew spotlessApply --stacktrace
 
-      - name: Fail if files were not pre-formatted
+      - name: Fail if source files were not pre-formatted
+        # Exclude wrapper artifacts: 'gradle wrapper' regenerates gradlew with
+        # mode 100755 + LF endings on the runner; the repo committed those
+        # from a Windows host with mode 100644 + CRLF. The diff is real but
+        # not a Spotless violation. Only check actual source / config files.
         run: |
-          if ! git diff --exit-code; then
+          if ! git diff --exit-code -- ':!gradlew' ':!gradlew.bat' ':!gradle/wrapper/'; then
             echo "::error::Spotless rewrote files. Run './gradlew spotlessApply' locally and commit before pushing."
             exit 1
           fi
