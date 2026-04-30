@@ -1,8 +1,10 @@
 # Copy to terraform.tfvars (gitignored) and fill in real values.
+# Required:
 project   = "levelsweep"
 location  = "eastus"
-tenant_id = "00000000-0000-0000-0000-000000000000"
+tenant_id = "PASTE-AZURE-AD-TENANT-ID"
 
+# Optional resource tags (merged into local.tags).
 tags = {
   cost-center = "engineering"
   owner       = "you@example.com"
