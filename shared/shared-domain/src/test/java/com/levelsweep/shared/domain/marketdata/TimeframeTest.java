@@ -56,14 +56,11 @@ class TimeframeTest {
     @Test
     void floor15MinAlignsToQuarterHours() {
         // 09:30 → 09:30 (boundary)
-        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 4, 30, 9, 30, 0)))
-                .isEqualTo(ny(2026, 4, 30, 9, 30, 0));
+        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 4, 30, 9, 30, 0))).isEqualTo(ny(2026, 4, 30, 9, 30, 0));
         // 09:44:59 → 09:30 (still in first 15min bar)
-        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 4, 30, 9, 44, 59)))
-                .isEqualTo(ny(2026, 4, 30, 9, 30, 0));
+        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 4, 30, 9, 44, 59))).isEqualTo(ny(2026, 4, 30, 9, 30, 0));
         // 09:45 → 09:45 (next boundary)
-        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 4, 30, 9, 45, 0)))
-                .isEqualTo(ny(2026, 4, 30, 9, 45, 0));
+        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 4, 30, 9, 45, 0))).isEqualTo(ny(2026, 4, 30, 9, 45, 0));
         // 10:00 → 10:00
         assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 4, 30, 10, 0, 0))).isEqualTo(ny(2026, 4, 30, 10, 0, 0));
     }
@@ -85,11 +82,9 @@ class TimeframeTest {
         // 2026 spring-forward: March 8 02:00 ET → 03:00 ET. The 02:00-02:59 hour does NOT exist
         // in local time. Pre-market data leading up to and through that boundary must still floor cleanly.
         // 01:45 EST → bar 01:45 (15-min)
-        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 3, 8, 1, 45, 0)))
-                .isEqualTo(ny(2026, 3, 8, 1, 45, 0));
+        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 3, 8, 1, 45, 0))).isEqualTo(ny(2026, 3, 8, 1, 45, 0));
         // After spring-forward jump, 03:00 EDT exists; 03:14 → 03:00
-        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 3, 8, 3, 14, 0)))
-                .isEqualTo(ny(2026, 3, 8, 3, 0, 0));
+        assertThat(Timeframe.FIFTEEN_MIN.floor(ny(2026, 3, 8, 3, 14, 0))).isEqualTo(ny(2026, 3, 8, 3, 0, 0));
     }
 
     @Test
@@ -98,7 +93,8 @@ class TimeframeTest {
         // We use the Java time API which handles this with offset preservation. Test: a tick at the
         // first 01:30 (still EDT) and one at the second 01:30 (now EST) floor to different instants
         // (since their UTC instants differ).
-        ZonedDateTime first = ZonedDateTime.of(2026, 11, 1, 1, 30, 0, 0, ZoneId.of("UTC")).withZoneSameInstant(NY);
+        ZonedDateTime first =
+                ZonedDateTime.of(2026, 11, 1, 1, 30, 0, 0, ZoneId.of("UTC")).withZoneSameInstant(NY);
         // Skip — exhaustive DST tests are an integration concern. The above 03:14 spring-forward
         // case already establishes the API works. Fall-back ambiguity is handled by the underlying
         // ZonedDateTime which preserves the offset present in the input.

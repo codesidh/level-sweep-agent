@@ -57,15 +57,14 @@ public record Bar(
                 || low.compareTo(close) > 0
                 || high.compareTo(open) < 0
                 || high.compareTo(close) < 0) {
-            throw new IllegalArgumentException(
-                    "low/high must envelope open/close: open="
-                            + open
-                            + " close="
-                            + close
-                            + " low="
-                            + low
-                            + " high="
-                            + high);
+            throw new IllegalArgumentException("low/high must envelope open/close: open="
+                    + open
+                    + " close="
+                    + close
+                    + " low="
+                    + low
+                    + " high="
+                    + high);
         }
     }
 }

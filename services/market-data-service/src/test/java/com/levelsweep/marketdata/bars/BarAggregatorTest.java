@@ -25,8 +25,8 @@ class BarAggregatorTest {
     @Test
     void emitsBarsForAllRequestedTimeframes() {
         Recording r = new Recording();
-        BarAggregator agg = new BarAggregator(
-                "SPY", NY, List.of(Timeframe.ONE_MIN, Timeframe.TWO_MIN, Timeframe.FIFTEEN_MIN), r);
+        BarAggregator agg =
+                new BarAggregator("SPY", NY, List.of(Timeframe.ONE_MIN, Timeframe.TWO_MIN, Timeframe.FIFTEEN_MIN), r);
 
         // Stream 16 minutes of ticks (one per minute) — should produce:
         //   16 × 1m bars, 8 × 2m bars, 1 × 15m bar (the first 15-min, finalized when minute 16 arrives)
@@ -36,9 +36,13 @@ class BarAggregatorTest {
         // Flush to emit the open in-flight bars
         agg.flushAll();
 
-        long oneMinCount = r.bars.stream().filter(b -> b.timeframe() == Timeframe.ONE_MIN).count();
-        long twoMinCount = r.bars.stream().filter(b -> b.timeframe() == Timeframe.TWO_MIN).count();
-        long fifteenMinCount = r.bars.stream().filter(b -> b.timeframe() == Timeframe.FIFTEEN_MIN).count();
+        long oneMinCount =
+                r.bars.stream().filter(b -> b.timeframe() == Timeframe.ONE_MIN).count();
+        long twoMinCount =
+                r.bars.stream().filter(b -> b.timeframe() == Timeframe.TWO_MIN).count();
+        long fifteenMinCount = r.bars.stream()
+                .filter(b -> b.timeframe() == Timeframe.FIFTEEN_MIN)
+                .count();
         assertThat(oneMinCount).isEqualTo(16);
         assertThat(twoMinCount).isEqualTo(8);
         assertThat(fifteenMinCount).isEqualTo(2); // [09:30,09:45) closes at 13:45, [09:45,10:00) flushed
@@ -48,8 +52,7 @@ class BarAggregatorTest {
     void ignoresTicksForOtherSymbols() {
         Recording r = new Recording();
         BarAggregator agg = new BarAggregator("SPY", NY, List.of(Timeframe.ONE_MIN), r);
-        Tick qqqTick = new Tick(
-                "QQQ", BigDecimal.valueOf(500.0), 100L, Instant.parse("2026-04-30T13:30:00Z"));
+        Tick qqqTick = new Tick("QQQ", BigDecimal.valueOf(500.0), 100L, Instant.parse("2026-04-30T13:30:00Z"));
         agg.onTick(qqqTick);
         agg.flushAll();
         assertThat(r.bars).isEmpty();

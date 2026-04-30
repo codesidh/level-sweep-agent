@@ -63,8 +63,7 @@ public final class BarBuilder {
     public Optional<Bar> apply(Tick tick) {
         Objects.requireNonNull(tick, "tick");
         if (!tick.symbol().equals(symbol)) {
-            throw new IllegalArgumentException(
-                    "tick symbol mismatch: expected=" + symbol + " got=" + tick.symbol());
+            throw new IllegalArgumentException("tick symbol mismatch: expected=" + symbol + " got=" + tick.symbol());
         }
         ZonedDateTime tsZ = tick.timestamp().atZone(zone);
         ZonedDateTime barOpenZ = timeframe.floor(tsZ);

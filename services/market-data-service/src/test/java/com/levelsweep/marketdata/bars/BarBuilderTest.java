@@ -113,8 +113,7 @@ class BarBuilderTest {
     @Test
     void rejectsTickWithWrongSymbol() {
         BarBuilder b = new BarBuilder("SPY", Timeframe.ONE_MIN, NY);
-        Tick foreign = new Tick(
-                "QQQ", BigDecimal.valueOf(500.0), 100L, Instant.parse("2026-04-30T13:30:00Z"));
+        Tick foreign = new Tick("QQQ", BigDecimal.valueOf(500.0), 100L, Instant.parse("2026-04-30T13:30:00Z"));
         assertThatThrownBy(() -> b.apply(foreign))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("symbol mismatch");

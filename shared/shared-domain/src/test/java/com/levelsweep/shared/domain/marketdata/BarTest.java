@@ -32,90 +32,85 @@ class BarTest {
 
     @Test
     void rejectsCloseTimeNotAfterOpenTime() {
-        assertThatThrownBy(
-                        () -> new Bar(
-                                "SPY",
-                                Timeframe.ONE_MIN,
-                                T0,
-                                T0,
-                                BigDecimal.ONE,
-                                BigDecimal.ONE,
-                                BigDecimal.ONE,
-                                BigDecimal.ONE,
-                                0L,
-                                0L))
+        assertThatThrownBy(() -> new Bar(
+                        "SPY",
+                        Timeframe.ONE_MIN,
+                        T0,
+                        T0,
+                        BigDecimal.ONE,
+                        BigDecimal.ONE,
+                        BigDecimal.ONE,
+                        BigDecimal.ONE,
+                        0L,
+                        0L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("closeTime must be after openTime");
     }
 
     @Test
     void rejectsLowAboveHigh() {
-        assertThatThrownBy(
-                        () -> new Bar(
-                                "SPY",
-                                Timeframe.ONE_MIN,
-                                T0,
-                                T1,
-                                BigDecimal.valueOf(100),
-                                BigDecimal.valueOf(99),
-                                BigDecimal.valueOf(101),
-                                BigDecimal.valueOf(100),
-                                0L,
-                                0L))
+        assertThatThrownBy(() -> new Bar(
+                        "SPY",
+                        Timeframe.ONE_MIN,
+                        T0,
+                        T1,
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(99),
+                        BigDecimal.valueOf(101),
+                        BigDecimal.valueOf(100),
+                        0L,
+                        0L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("low > high");
     }
 
     @Test
     void rejectsLowAboveOpen() {
-        assertThatThrownBy(
-                        () -> new Bar(
-                                "SPY",
-                                Timeframe.ONE_MIN,
-                                T0,
-                                T1,
-                                BigDecimal.valueOf(100),
-                                BigDecimal.valueOf(105),
-                                BigDecimal.valueOf(101),
-                                BigDecimal.valueOf(102),
-                                0L,
-                                0L))
+        assertThatThrownBy(() -> new Bar(
+                        "SPY",
+                        Timeframe.ONE_MIN,
+                        T0,
+                        T1,
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(105),
+                        BigDecimal.valueOf(101),
+                        BigDecimal.valueOf(102),
+                        0L,
+                        0L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("envelope");
     }
 
     @Test
     void rejectsHighBelowClose() {
-        assertThatThrownBy(
-                        () -> new Bar(
-                                "SPY",
-                                Timeframe.ONE_MIN,
-                                T0,
-                                T1,
-                                BigDecimal.valueOf(100),
-                                BigDecimal.valueOf(101),
-                                BigDecimal.valueOf(99),
-                                BigDecimal.valueOf(102),
-                                0L,
-                                0L))
+        assertThatThrownBy(() -> new Bar(
+                        "SPY",
+                        Timeframe.ONE_MIN,
+                        T0,
+                        T1,
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(101),
+                        BigDecimal.valueOf(99),
+                        BigDecimal.valueOf(102),
+                        0L,
+                        0L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("envelope");
     }
 
     @Test
     void rejectsNegativeVolume() {
-        assertThatThrownBy(
-                        () -> new Bar(
-                                "SPY",
-                                Timeframe.ONE_MIN,
-                                T0,
-                                T1,
-                                BigDecimal.ONE,
-                                BigDecimal.ONE,
-                                BigDecimal.ONE,
-                                BigDecimal.ONE,
-                                -1L,
-                                0L))
+        assertThatThrownBy(() -> new Bar(
+                        "SPY",
+                        Timeframe.ONE_MIN,
+                        T0,
+                        T1,
+                        BigDecimal.ONE,
+                        BigDecimal.ONE,
+                        BigDecimal.ONE,
+                        BigDecimal.ONE,
+                        -1L,
+                        0L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

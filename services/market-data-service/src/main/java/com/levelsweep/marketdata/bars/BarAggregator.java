@@ -70,7 +70,8 @@ public final class BarAggregator implements TickListener {
         }
         for (Map.Entry<Timeframe, BarBuilder> e : builders.entrySet()) {
             try {
-                Optional<com.levelsweep.shared.domain.marketdata.Bar> emitted = e.getValue().apply(tick);
+                Optional<com.levelsweep.shared.domain.marketdata.Bar> emitted =
+                        e.getValue().apply(tick);
                 emitted.ifPresent(this::emit);
             } catch (Exception ex) {
                 LOG.warn("BarBuilder({}) threw on tick — continuing", e.getKey(), ex);
