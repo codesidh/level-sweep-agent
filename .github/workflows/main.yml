@@ -48,8 +48,18 @@ jobs:
       - name: Bootstrap Gradle wrapper jar
         run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin
 
-      - name: Spotless check
-        run: ./gradlew spotlessCheck --stacktrace
+      # Apply (auto-fix) — main.yml runs after merge, so any drift is from
+      # broken pre-commit hygiene. Run apply, then fail if anything changed
+      # so the offending PR author / commit is identified.
+      - name: Spotless apply (Palantir Java + ktlint)
+        run: ./gradlew spotlessApply --stacktrace
+
+      - name: Fail if files were not pre-formatted
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Spotless rewrote files on main. Investigate the previous PR for missing pre-commit hooks."
+            exit 1
+          fi
 
       - name: Build all modules
         run: ./gradlew build --stacktrace

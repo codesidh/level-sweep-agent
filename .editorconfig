@@ -16,11 +16,9 @@ indent_size = 4
 # Gradle DSL frequently has long lines for plugin IDs and dependency coords;
 # 140 is the Kotlin community default and matches ktlint's recommendation.
 max_line_length = 140
-# Trailing commas are noisy on multi-line function calls in Gradle DSL files
-# (logger.lifecycle, listOf, addAll); disable rather than enforce. We don't
-# rely on diff cleanliness for these files.
-ktlint_standard_trailing-comma-on-call-site = disabled
-ktlint_standard_trailing-comma-on-declaration-site = disabled
+# Trailing-comma rules stay enabled. CI uses spotlessApply (autofix) so any
+# missing commas are added automatically; spotlessCheck is the contract for
+# local pre-commit hooks.
 
 [*.{yml,yaml,json,toml}]
 indent_size = 2

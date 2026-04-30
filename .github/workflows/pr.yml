@@ -54,8 +54,19 @@ jobs:
       - name: Bootstrap Gradle wrapper jar
         run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin
 
-      - name: Spotless check (Palantir Java format)
-        run: ./gradlew spotlessCheck --stacktrace
+      # Apply (auto-fix) instead of check — Spotless rewrites files in-place
+      # in the ephemeral runner workspace. This keeps CI green on minor
+      # formatting drift while still surfacing unformatted code via the
+      # post-apply git-diff exit gate below.
+      - name: Spotless apply (Palantir Java + ktlint)
+        run: ./gradlew spotlessApply --stacktrace
+
+      - name: Fail if files were not pre-formatted
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Spotless rewrote files. Run './gradlew spotlessApply' locally and commit before pushing."
+            exit 1
+          fi
 
       - name: Build + unit tests
         run: ./gradlew build --stacktrace
