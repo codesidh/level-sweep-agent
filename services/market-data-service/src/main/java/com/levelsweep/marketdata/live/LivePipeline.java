@@ -26,6 +26,7 @@ import java.time.Clock;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -86,6 +87,9 @@ public class LivePipeline {
     private final BarAggregator barAggregator;
     private final IndicatorEngine indicatorEngine;
     private final AtomicLong quoteCount = new AtomicLong();
+    // Additional bar listeners registered post-construction (e.g. persistence wiring).
+    // Copy-on-write so the bar fan-out lambda iterates a stable snapshot per call.
+    private final CopyOnWriteArrayList<BarListener> additionalBarListeners = new CopyOnWriteArrayList<>();
 
     private volatile AlpacaStream stream;
     private volatile Thread drainer;
@@ -120,7 +124,25 @@ public class LivePipeline {
         BarListener barFanout = new BarListener() {
             @Override
             public void onBar(Bar bar) {
-                indicatorEngine.onBar(bar);
+                // Indicator engine is the always-on internal subscriber.
+                try {
+                    indicatorEngine.onBar(bar);
+                } catch (RuntimeException e) {
+                    LOG.warn("indicator engine onBar failed: {}", e.toString());
+                }
+                // Fan out to externally-registered listeners (persistence, future
+                // decision engine wiring, etc.). Per-listener exception isolation —
+                // one listener's failure must not block the others.
+                for (BarListener listener : additionalBarListeners) {
+                    try {
+                        listener.onBar(bar);
+                    } catch (RuntimeException e) {
+                        LOG.warn(
+                                "additional bar listener {} onBar failed: {}",
+                                listener.getClass().getName(),
+                                e.toString());
+                    }
+                }
             }
         };
         // Quote routing: in the live path, AlpacaStream dispatches quotes directly to
@@ -302,5 +324,17 @@ public class LivePipeline {
     /** Whether the live WS path was wired (false in dev/replay when api key is blank). */
     public boolean wsAttached() {
         return stream != null;
+    }
+
+    /**
+     * Register an additional bar listener for the fan-out path. Thread-safe — listeners
+     * may be added at startup (via {@link StartupEvent} observers) or later. The internal
+     * {@link IndicatorEngine} is always invoked first; registered listeners are invoked
+     * in registration order. Per-listener exceptions are logged and swallowed so one
+     * failing sink can't block the others.
+     */
+    public void registerBarListener(BarListener listener) {
+        Objects.requireNonNull(listener, "listener");
+        additionalBarListeners.add(listener);
     }
 }

@@ -19,11 +19,17 @@ dependencies {
     implementation(libs.quarkus.opentelemetry)
     implementation(libs.quarkus.kafka.client)
     implementation(libs.quarkus.mongodb.client)
+    implementation(libs.quarkus.agroal)
+    implementation(libs.quarkus.jdbc.mssql)
+    implementation(libs.quarkus.flyway)
+    implementation(libs.flyway.mssql)
     implementation(libs.quarkus.smallrye.fault.tolerance)
 
     testImplementation(libs.quarkus.junit5)
     testImplementation(libs.quarkus.rest.assured)
     testImplementation(libs.assertj.core)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.junit.jupiter)
 }
 
 // Native-image profile stub (Phase 7 — do not run in Phase 0)
