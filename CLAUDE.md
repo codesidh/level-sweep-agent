@@ -113,5 +113,6 @@ Skills auto-load by trigger phrase. See `.claude/skills/`.
 - `multi-tenant-readiness` — `tenant_id` on every entity; isolation tests
 - `phase-a-b-feature-flags` — Phase B code stays behind flags until legal review
 - `replay-parity` — Decision Engine changes require replay parity test
+- `gradle-build-conventions` — version catalog, Gradle pinning, Spotless, dep verification
 
 **Inherited from `claude-code-java`**: java-code-review, security-audit, concurrency-review, performance-smell-detection, test-quality, architecture-review, solid-principles, design-patterns, clean-code, spring-boot-patterns, jpa-patterns, java-migration, logging-patterns, git-commit, changelog-generator, issue-triage, api-contract-review, maven-dependency-audit *(harmless if unused — we're on Gradle)*.
