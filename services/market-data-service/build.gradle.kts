@@ -18,6 +18,7 @@ dependencies {
     implementation(libs.quarkus.micrometer.prometheus)
     implementation(libs.quarkus.opentelemetry)
     implementation(libs.quarkus.kafka.client)
+    implementation(libs.quarkus.messaging.kafka)
     implementation(libs.quarkus.mongodb.client)
     implementation(libs.quarkus.agroal)
     implementation(libs.quarkus.jdbc.mssql)
