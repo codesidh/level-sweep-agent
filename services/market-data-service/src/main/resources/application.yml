@@ -131,10 +131,25 @@ tenant:
 # and (c) confused trace IDs when both pipes register exporters.
 # Micrometer stays enabled so JVM metrics still publish to /q/metrics; the
 # agent picks them up via the Micrometer-bridge it ships with.
+#
+# Flyway is also turned off in %prod because Phase 1 dev doesn't deploy
+# MS SQL — managed Azure SQL Database lands in Phase 7 per architecture-spec
+# §13.1. Without this, migrate-at-start would block boot trying to reach a
+# nonexistent jdbc URL. The daily SessionLevelScheduler already catches
+# LevelsRepository upsert exceptions, so an absent DB is graceful.
 "%prod":
   quarkus:
     opentelemetry:
       enabled: false
+    flyway:
+      migrate-at-start: false
+      enabled: false
+    datasource:
+      health:
+        enabled: false
+    mongodb:
+      health:
+        enabled: false
 
 # Test profile — Quarkus dev-services would otherwise try to spin up Mongo
 # and MS SQL containers in CI. Disable them here so unit tests run without
