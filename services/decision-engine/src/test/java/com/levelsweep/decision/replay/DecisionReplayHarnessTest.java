@@ -125,8 +125,8 @@ class DecisionReplayHarnessTest {
                         a.levels().pmh(),
                         a.levels().pml())
                 .barCount(a.bars2m().size())
-                .withStackBias(SyntheticSessionFixtures.StackBias.SHORT_STACK)
-                .injectSweep(80, SyntheticSessionFixtures.SweepKind.PDH_FROM_BELOW, new BigDecimal("0.50"))
+                .withStackBias(SyntheticSessionFixtures.StackBias.BEARISH)
+                .injectSweep(80, SyntheticSessionFixtures.SweepKind.PDH_SHORT, new BigDecimal("0.50"))
                 .build();
 
         DecisionReplayPipeline runA = runFull(a);
@@ -188,8 +188,8 @@ class DecisionReplayHarnessTest {
                         new BigDecimal("594.50"),
                         new BigDecimal("593.50"))
                 .barCount(195)
-                .withStackBias(SyntheticSessionFixtures.StackBias.SHORT_STACK)
-                .injectSweep(80, SyntheticSessionFixtures.SweepKind.PDH_FROM_BELOW, new BigDecimal("0.50"))
+                .withStackBias(SyntheticSessionFixtures.StackBias.BEARISH)
+                .injectSweep(80, SyntheticSessionFixtures.SweepKind.PDH_SHORT, new BigDecimal("0.50"))
                 .build();
     }
 
@@ -204,8 +204,8 @@ class DecisionReplayHarnessTest {
                         new BigDecimal("594.50"),
                         new BigDecimal("593.50"))
                 .barCount(195)
-                .withStackBias(SyntheticSessionFixtures.StackBias.LONG_STACK)
-                .injectSweep(60, SyntheticSessionFixtures.SweepKind.PDL_FROM_ABOVE, new BigDecimal("0.50"))
+                .withStackBias(SyntheticSessionFixtures.StackBias.BULLISH)
+                .injectSweep(60, SyntheticSessionFixtures.SweepKind.PDL_LONG, new BigDecimal("0.50"))
                 .build();
     }
 
@@ -220,7 +220,7 @@ class DecisionReplayHarnessTest {
                         new BigDecimal("596.00"),
                         new BigDecimal("592.00"))
                 .barCount(195)
-                .withStackBias(SyntheticSessionFixtures.StackBias.NEUTRAL)
+                // No bias setting — quiet day relies on no-injected-sweep + far-away levels.
                 // No injected sweep — random walk only, levels are far enough that
                 // organic price action stays inside the [pdl, pdh] band.
                 .build();
