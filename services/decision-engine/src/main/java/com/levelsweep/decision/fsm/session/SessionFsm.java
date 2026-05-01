@@ -58,12 +58,8 @@ public class SessionFsm implements Fsm<SessionState, SessionEvent> {
         return switch (currentState) {
             case PRE_MARKET -> event == SessionEvent.LEVELS_READY ? Optional.of(SessionState.ARMED) : Optional.empty();
             case ARMED -> event == SessionEvent.MARKET_OPEN ? Optional.of(SessionState.TRADING) : Optional.empty();
-            case TRADING -> event == SessionEvent.EOD_TRIGGER
-                    ? Optional.of(SessionState.FLATTENING)
-                    : Optional.empty();
-            case FLATTENING -> event == SessionEvent.MARKET_CLOSE
-                    ? Optional.of(SessionState.CLOSED)
-                    : Optional.empty();
+            case TRADING -> event == SessionEvent.EOD_TRIGGER ? Optional.of(SessionState.FLATTENING) : Optional.empty();
+            case FLATTENING -> event == SessionEvent.MARKET_CLOSE ? Optional.of(SessionState.CLOSED) : Optional.empty();
             case CLOSED, BLACKOUT -> Optional.empty();
         };
     }

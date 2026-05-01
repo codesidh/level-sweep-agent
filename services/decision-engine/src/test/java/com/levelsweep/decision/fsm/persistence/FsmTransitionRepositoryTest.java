@@ -85,8 +85,8 @@ class FsmTransitionRepositoryTest {
                 Optional.of("{\"foo\":1}"),
                 Optional.of("corr-1"));
         RecordingHandler rec = new RecordingHandler();
-        PreparedStatement ps = (PreparedStatement) Proxy.newProxyInstance(
-                getClass().getClassLoader(), new Class<?>[] {PreparedStatement.class}, rec);
+        PreparedStatement ps = (PreparedStatement)
+                Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {PreparedStatement.class}, rec);
 
         FsmTransitionRepository.bindInsertParams(ps, tr);
 
@@ -122,8 +122,8 @@ class FsmTransitionRepositoryTest {
                 Optional.empty(),
                 Optional.empty());
         RecordingHandler rec = new RecordingHandler();
-        PreparedStatement ps = (PreparedStatement) Proxy.newProxyInstance(
-                getClass().getClassLoader(), new Class<?>[] {PreparedStatement.class}, rec);
+        PreparedStatement ps = (PreparedStatement)
+                Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {PreparedStatement.class}, rec);
 
         FsmTransitionRepository.bindInsertParams(ps, seed);
 
@@ -285,6 +285,5 @@ class FsmTransitionRepositoryTest {
                     .sorted()
                     .toList();
         }
-
     }
 }

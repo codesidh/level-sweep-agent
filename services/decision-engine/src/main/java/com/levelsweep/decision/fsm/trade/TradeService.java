@@ -97,8 +97,7 @@ public class TradeService {
         return Optional.of(updated);
     }
 
-    private void persist(
-            TradeFsmInstance from, TradeFsmInstance to, TradeEvent event, Optional<String> correlationId) {
+    private void persist(TradeFsmInstance from, TradeFsmInstance to, TradeEvent event, Optional<String> correlationId) {
         FsmTransition<TradeState, TradeEvent> transition = new FsmTransition<>(
                 to.tenantId(),
                 to.sessionDate(),
@@ -113,5 +112,4 @@ public class TradeService {
                 correlationId);
         repository.record(transition);
     }
-
 }

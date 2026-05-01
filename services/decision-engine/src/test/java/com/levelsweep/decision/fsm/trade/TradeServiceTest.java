@@ -49,8 +49,7 @@ class TradeServiceTest {
         TradeFsmInstance trade = service.propose(TENANT, SESSION);
         String id = trade.tradeId();
 
-        assertThat(service.apply(id, TradeEvent.RISK_APPROVED, Optional.empty())
-                        .map(TradeFsmInstance::state))
+        assertThat(service.apply(id, TradeEvent.RISK_APPROVED, Optional.empty()).map(TradeFsmInstance::state))
                 .contains(TradeState.ENTERED);
         assertThat(service.apply(id, TradeEvent.FILL_CONFIRMED, Optional.empty())
                         .map(TradeFsmInstance::state))

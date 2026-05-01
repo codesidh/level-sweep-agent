@@ -41,21 +41,26 @@ class SessionFsmTest {
 
     @Test
     void blackoutStartFromAnyNonTerminalState() {
-        assertThat(fsm.next(SessionState.PRE_MARKET, SessionEvent.NEWS_BLACKOUT_START)).contains(SessionState.BLACKOUT);
-        assertThat(fsm.next(SessionState.ARMED, SessionEvent.NEWS_BLACKOUT_START)).contains(SessionState.BLACKOUT);
-        assertThat(fsm.next(SessionState.TRADING, SessionEvent.NEWS_BLACKOUT_START)).contains(SessionState.BLACKOUT);
+        assertThat(fsm.next(SessionState.PRE_MARKET, SessionEvent.NEWS_BLACKOUT_START))
+                .contains(SessionState.BLACKOUT);
+        assertThat(fsm.next(SessionState.ARMED, SessionEvent.NEWS_BLACKOUT_START))
+                .contains(SessionState.BLACKOUT);
+        assertThat(fsm.next(SessionState.TRADING, SessionEvent.NEWS_BLACKOUT_START))
+                .contains(SessionState.BLACKOUT);
         assertThat(fsm.next(SessionState.FLATTENING, SessionEvent.NEWS_BLACKOUT_START))
                 .contains(SessionState.BLACKOUT);
     }
 
     @Test
     void blackoutStartFromClosedIsRejected() {
-        assertThat(fsm.next(SessionState.CLOSED, SessionEvent.NEWS_BLACKOUT_START)).isEmpty();
+        assertThat(fsm.next(SessionState.CLOSED, SessionEvent.NEWS_BLACKOUT_START))
+                .isEmpty();
     }
 
     @Test
     void blackoutStartWhileBlackoutIsRejected() {
-        assertThat(fsm.next(SessionState.BLACKOUT, SessionEvent.NEWS_BLACKOUT_START)).isEmpty();
+        assertThat(fsm.next(SessionState.BLACKOUT, SessionEvent.NEWS_BLACKOUT_START))
+                .isEmpty();
     }
 
     @Test
@@ -71,9 +76,7 @@ class SessionFsmTest {
     @Test
     void closedIsTerminal() {
         for (SessionEvent e : SessionEvent.values()) {
-            assertThat(fsm.next(SessionState.CLOSED, e))
-                    .as("closed via %s", e)
-                    .isEmpty();
+            assertThat(fsm.next(SessionState.CLOSED, e)).as("closed via %s", e).isEmpty();
         }
     }
 

@@ -46,19 +46,13 @@ public class TradeFsm implements Fsm<TradeState, TradeEvent> {
             return Optional.of(TradeState.FAILED);
         }
         return switch (currentState) {
-            case PROPOSED -> event == TradeEvent.RISK_APPROVED
-                    ? Optional.of(TradeState.ENTERED)
-                    : Optional.empty();
-            case ENTERED -> event == TradeEvent.FILL_CONFIRMED
-                    ? Optional.of(TradeState.ACTIVE)
-                    : Optional.empty();
+            case PROPOSED -> event == TradeEvent.RISK_APPROVED ? Optional.of(TradeState.ENTERED) : Optional.empty();
+            case ENTERED -> event == TradeEvent.FILL_CONFIRMED ? Optional.of(TradeState.ACTIVE) : Optional.empty();
             case ACTIVE -> switch (event) {
                 case STOP_HIT, PROFIT_TARGET_HIT, EOD_FLATTEN -> Optional.of(TradeState.EXITING);
                 default -> Optional.empty();
             };
-            case EXITING -> event == TradeEvent.EXIT_FILL_CONFIRMED
-                    ? Optional.of(TradeState.CLOSED)
-                    : Optional.empty();
+            case EXITING -> event == TradeEvent.EXIT_FILL_CONFIRMED ? Optional.of(TradeState.CLOSED) : Optional.empty();
             case CLOSED, FAILED -> Optional.empty();
         };
     }

@@ -65,12 +65,8 @@ class TradeFsmTest {
     @Test
     void closedAndFailedAreTerminal() {
         for (TradeEvent e : TradeEvent.values()) {
-            assertThat(fsm.next(TradeState.CLOSED, e))
-                    .as("closed via %s", e)
-                    .isEmpty();
-            assertThat(fsm.next(TradeState.FAILED, e))
-                    .as("failed via %s", e)
-                    .isEmpty();
+            assertThat(fsm.next(TradeState.CLOSED, e)).as("closed via %s", e).isEmpty();
+            assertThat(fsm.next(TradeState.FAILED, e)).as("failed via %s", e).isEmpty();
         }
     }
 

@@ -93,11 +93,7 @@ public class SessionService {
     }
 
     private void persist(
-            String tenantId,
-            SessionState from,
-            SessionState to,
-            SessionEvent event,
-            Optional<String> correlationId) {
+            String tenantId, SessionState from, SessionState to, SessionEvent event, Optional<String> correlationId) {
         Instant now = clock.instant();
         LocalDate sessionDate = now.atZone(ET_ZONE).toLocalDate();
         FsmTransition<SessionState, SessionEvent> transition = new FsmTransition<>(

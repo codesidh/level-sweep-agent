@@ -34,11 +34,14 @@ class SessionServiceTest {
 
     @Test
     void happyPathAcrossTheSessionPersistsEveryTransition() {
-        assertThat(service.apply(TENANT, SessionEvent.LEVELS_READY, Optional.empty())).contains(SessionState.ARMED);
-        assertThat(service.apply(TENANT, SessionEvent.MARKET_OPEN, Optional.empty())).contains(SessionState.TRADING);
+        assertThat(service.apply(TENANT, SessionEvent.LEVELS_READY, Optional.empty()))
+                .contains(SessionState.ARMED);
+        assertThat(service.apply(TENANT, SessionEvent.MARKET_OPEN, Optional.empty()))
+                .contains(SessionState.TRADING);
         assertThat(service.apply(TENANT, SessionEvent.EOD_TRIGGER, Optional.empty()))
                 .contains(SessionState.FLATTENING);
-        assertThat(service.apply(TENANT, SessionEvent.MARKET_CLOSE, Optional.empty())).contains(SessionState.CLOSED);
+        assertThat(service.apply(TENANT, SessionEvent.MARKET_CLOSE, Optional.empty()))
+                .contains(SessionState.CLOSED);
 
         assertThat(repo.records).hasSize(4);
     }
@@ -46,7 +49,8 @@ class SessionServiceTest {
     @Test
     void invalidEventDoesNotPersist() {
         // Cannot fire MARKET_OPEN from PRE_MARKET — LEVELS_READY must come first.
-        assertThat(service.apply(TENANT, SessionEvent.MARKET_OPEN, Optional.empty())).isEmpty();
+        assertThat(service.apply(TENANT, SessionEvent.MARKET_OPEN, Optional.empty()))
+                .isEmpty();
         assertThat(repo.records).isEmpty();
     }
 
