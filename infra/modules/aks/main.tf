@@ -41,6 +41,15 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   azure_policy_enabled = var.enable_azure_policy
 
+  # Azure Key Vault Secrets Provider CSI driver. Pods consume KV-stored
+  # creds via SecretProviderClass + CSI volume mount; the AKS-managed
+  # add-on installs the driver + provider DaemonSets on every node and
+  # registers the CSI driver in the cluster.
+  key_vault_secrets_provider {
+    secret_rotation_enabled  = false
+    secret_rotation_interval = "2m"
+  }
+
   network_profile {
     network_plugin = "azure"
     network_policy = "azure"
