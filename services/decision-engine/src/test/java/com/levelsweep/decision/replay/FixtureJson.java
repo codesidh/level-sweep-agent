@@ -179,8 +179,7 @@ final class FixtureJson {
         }
 
         static LevelsDto fromLevels(Levels l) {
-            return new LevelsDto(
-                    l.tenantId(), l.symbol(), l.sessionDate(), l.pdh(), l.pdl(), l.pmh(), l.pml());
+            return new LevelsDto(l.tenantId(), l.symbol(), l.sessionDate(), l.pdh(), l.pdl(), l.pmh(), l.pml());
         }
 
         Levels toLevels() {
@@ -200,7 +199,9 @@ final class FixtureJson {
     static List<IndicatorSnapshot> readIndicators(String sessionName) {
         try (InputStream is = open(sessionName, "indicators.json")) {
             IndicatorSnapshotDto[] dtos = MAPPER.readValue(is, IndicatorSnapshotDto[].class);
-            return java.util.Arrays.stream(dtos).map(IndicatorSnapshotDto::toSnapshot).toList();
+            return java.util.Arrays.stream(dtos)
+                    .map(IndicatorSnapshotDto::toSnapshot)
+                    .toList();
         } catch (IOException e) {
             throw new UncheckedIOException("read indicators.json for " + sessionName, e);
         }
@@ -231,7 +232,8 @@ final class FixtureJson {
         Path dir = resourcesRoot.resolve("replay").resolve(session.name());
         try {
             Files.createDirectories(dir);
-            List<BarDto> barDtos = session.bars2m().stream().map(BarDto::fromBar).toList();
+            List<BarDto> barDtos =
+                    session.bars2m().stream().map(BarDto::fromBar).toList();
             List<IndicatorSnapshotDto> snapDtos = session.indicators().stream()
                     .map(IndicatorSnapshotDto::fromSnapshot)
                     .toList();

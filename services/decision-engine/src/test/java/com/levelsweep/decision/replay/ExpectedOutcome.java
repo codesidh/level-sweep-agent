@@ -72,16 +72,14 @@ public record ExpectedOutcome(
             throw new IllegalArgumentException("counts must be >= 0");
         }
         if (signalsTaken + signalsSkipped != signalEvaluations) {
-            throw new IllegalArgumentException(
-                    "taken + skipped must equal signalEvaluations; got "
-                            + signalsTaken + " + " + signalsSkipped + " != " + signalEvaluations);
+            throw new IllegalArgumentException("taken + skipped must equal signalEvaluations; got " + signalsTaken
+                    + " + " + signalsSkipped + " != " + signalEvaluations);
         }
         this.barCount = barCount;
         this.signalEvaluations = signalEvaluations;
         this.signalsTaken = signalsTaken;
         this.signalsSkipped = signalsSkipped;
-        this.skipReasonCounts =
-                skipReasonCounts == null ? Map.of() : new LinkedHashMap<>(skipReasonCounts);
+        this.skipReasonCounts = skipReasonCounts == null ? Map.of() : new LinkedHashMap<>(skipReasonCounts);
         this.firstTakenLevel = firstTakenLevel == null ? Optional.empty() : firstTakenLevel;
         this.firstTakenAt = firstTakenAt == null ? Optional.empty() : firstTakenAt;
     }

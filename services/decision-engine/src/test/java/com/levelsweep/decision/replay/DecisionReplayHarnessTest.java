@@ -119,7 +119,11 @@ class DecisionReplayHarnessTest {
                 .fromSeed(99L)
                 .onDate(a.date())
                 .openPrice(594.0)
-                .withLevels(a.levels().pdh(), a.levels().pdl(), a.levels().pmh(), a.levels().pml())
+                .withLevels(
+                        a.levels().pdh(),
+                        a.levels().pdl(),
+                        a.levels().pmh(),
+                        a.levels().pml())
                 .barCount(a.bars2m().size())
                 .withStackBias(SyntheticSessionFixtures.StackBias.SHORT_STACK)
                 .injectSweep(80, SyntheticSessionFixtures.SweepKind.PDH_FROM_BELOW, new BigDecimal("0.50"))
@@ -256,8 +260,9 @@ class DecisionReplayHarnessTest {
     }
 
     private static ExpectedOutcome summarize(String name, DecisionReplayPipeline p) {
-        int takenCount = (int)
-                p.evaluations().stream().filter(e -> e.action() != SignalAction.SKIP).count();
+        int takenCount = (int) p.evaluations().stream()
+                .filter(e -> e.action() != SignalAction.SKIP)
+                .count();
         int skippedCount = p.evaluations().size() - takenCount;
         Map<String, Integer> skipReasonCounts = p.evaluations().stream()
                 .filter(e -> e.action() == SignalAction.SKIP)

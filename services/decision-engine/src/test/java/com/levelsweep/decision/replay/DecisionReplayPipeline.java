@@ -119,7 +119,11 @@ public final class DecisionReplayPipeline {
      * for stability.
      */
     public void resetForSession(
-            String tenantId, LocalDate sessionDate, BigDecimal startingEquity, BigDecimal dailyLossBudget, Instant now) {
+            String tenantId,
+            LocalDate sessionDate,
+            BigDecimal startingEquity,
+            BigDecimal dailyLossBudget,
+            Instant now) {
         Objects.requireNonNull(tenantId, "tenantId");
         Objects.requireNonNull(sessionDate, "sessionDate");
         Objects.requireNonNull(startingEquity, "startingEquity");
@@ -172,8 +176,8 @@ public final class DecisionReplayPipeline {
         if (entered.isEmpty()) {
             return;
         }
-        tradeTransitions.add(
-                new TradeTransition(tradeId, TradeState.PROPOSED, entered.get(), TradeEvent.RISK_APPROVED, bar.closeTime()));
+        tradeTransitions.add(new TradeTransition(
+                tradeId, TradeState.PROPOSED, entered.get(), TradeEvent.RISK_APPROVED, bar.closeTime()));
         // ENTERED → ACTIVE on FILL_CONFIRMED — synthesised here for parity audit.
         Optional<TradeState> active = tradeFsm.next(entered.get(), TradeEvent.FILL_CONFIRMED);
         if (active.isPresent()) {
@@ -209,11 +213,7 @@ public final class DecisionReplayPipeline {
                 Optional<TradeState> closed = tradeFsm.next(exiting.get(), TradeEvent.EXIT_FILL_CONFIRMED);
                 if (closed.isPresent()) {
                     tradeTransitions.add(new TradeTransition(
-                            activeTrade.tradeId(),
-                            exiting.get(),
-                            closed.get(),
-                            TradeEvent.EXIT_FILL_CONFIRMED,
-                            now));
+                            activeTrade.tradeId(), exiting.get(), closed.get(), TradeEvent.EXIT_FILL_CONFIRMED, now));
                 }
             }
             activeTrade = null;
@@ -230,11 +230,7 @@ public final class DecisionReplayPipeline {
                 Optional<TradeState> closed = tradeFsm.next(exiting.get(), TradeEvent.EXIT_FILL_CONFIRMED);
                 if (closed.isPresent()) {
                     tradeTransitions.add(new TradeTransition(
-                            activeTrade.tradeId(),
-                            exiting.get(),
-                            closed.get(),
-                            TradeEvent.EXIT_FILL_CONFIRMED,
-                            now));
+                            activeTrade.tradeId(), exiting.get(), closed.get(), TradeEvent.EXIT_FILL_CONFIRMED, now));
                 }
             }
             activeTrade = null;

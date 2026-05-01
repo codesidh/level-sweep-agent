@@ -79,11 +79,7 @@ public final class SyntheticSessionFixtures {
      * indicator snapshot per bar in lock-step.
      */
     public record Session(
-            String name,
-            LocalDate date,
-            Levels levels,
-            List<Bar> bars2m,
-            List<IndicatorSnapshot> indicators) {
+            String name, LocalDate date, Levels levels, List<Bar> bars2m, List<IndicatorSnapshot> indicators) {
         public Session {
             Objects.requireNonNull(name, "name");
             Objects.requireNonNull(date, "date");
@@ -188,7 +184,8 @@ public final class SyntheticSessionFixtures {
 
             double price = openPrice;
             for (int i = 0; i < barCount; i++) {
-                Instant openTime = open.plus(Timeframe.TWO_MIN.duration().multipliedBy(i)).toInstant();
+                Instant openTime =
+                        open.plus(Timeframe.TWO_MIN.duration().multipliedBy(i)).toInstant();
                 Instant closeTime = openTime.plus(Timeframe.TWO_MIN.duration());
 
                 SweepInjection inj = findInjection(i);
