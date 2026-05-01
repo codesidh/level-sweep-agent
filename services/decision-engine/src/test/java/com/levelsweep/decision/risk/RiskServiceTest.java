@@ -128,10 +128,8 @@ class RiskServiceTest {
         assertThatThrownBy(() -> service.onFillRealized(TENANT, new BigDecimal("-10.00")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("not initialized");
-        assertThatThrownBy(() -> service.onTradeStarted(TENANT))
-                .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> service.onHaltManual(TENANT, "MANUAL"))
-                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.onTradeStarted(TENANT)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.onHaltManual(TENANT, "MANUAL")).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

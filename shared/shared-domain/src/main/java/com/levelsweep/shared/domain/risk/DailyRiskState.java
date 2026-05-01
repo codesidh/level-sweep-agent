@@ -58,15 +58,13 @@ public record DailyRiskState(
             throw new IllegalArgumentException("tradesTaken must be >= 0; got " + tradesTaken);
         }
         if (realizedLoss.signum() < 0) {
-            throw new IllegalArgumentException(
-                    "realizedLoss must be >= 0 (magnitude); got " + realizedLoss);
+            throw new IllegalArgumentException("realizedLoss must be >= 0 (magnitude); got " + realizedLoss);
         }
         if (state == RiskState.HALTED && haltedAt.isEmpty()) {
             throw new IllegalArgumentException("HALTED state requires haltedAt");
         }
         if (haltedAt.isPresent() != haltReason.isPresent()) {
-            throw new IllegalArgumentException(
-                    "haltedAt and haltReason must both be present or both absent");
+            throw new IllegalArgumentException("haltedAt and haltReason must both be present or both absent");
         }
     }
 }

@@ -96,10 +96,7 @@ public class DailyRiskStateRepository {
             }
         } catch (SQLException e) {
             LOG.warn(
-                    "daily_state risk read failed tenantId={} sessionDate={}: {}",
-                    tenantId,
-                    sessionDate,
-                    e.toString());
+                    "daily_state risk read failed tenantId={} sessionDate={}: {}", tenantId, sessionDate, e.toString());
             throw new RuntimeException("daily_state risk read failed", e);
         }
     }
@@ -139,8 +136,7 @@ public class DailyRiskStateRepository {
 
     // --- package-private SQL-binding helpers (unit-testable without a DB) ---
 
-    static void bindUpsertParams(PreparedStatement ps, DailyRiskState state, String symbol)
-            throws SQLException {
+    static void bindUpsertParams(PreparedStatement ps, DailyRiskState state, String symbol) throws SQLException {
         ps.setString(1, state.tenantId());
         ps.setDate(2, Date.valueOf(state.sessionDate()));
         ps.setBigDecimal(3, state.startingEquity());
@@ -181,8 +177,7 @@ public class DailyRiskStateRepository {
         ps.setString(9, event.reason());
     }
 
-    private static void setBigDecimalOrNull(PreparedStatement ps, int idx, BigDecimal value)
-            throws SQLException {
+    private static void setBigDecimalOrNull(PreparedStatement ps, int idx, BigDecimal value) throws SQLException {
         if (value == null) {
             ps.setNull(idx, Types.DECIMAL);
         } else {

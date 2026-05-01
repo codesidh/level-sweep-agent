@@ -25,6 +25,7 @@ class RiskFsmTest {
 
     /** $5,000 equity → $100 budget (2%). Max 5 trades/day. */
     private static final BigDecimal EQUITY = new BigDecimal("5000.00");
+
     private static final BigDecimal BUDGET = new BigDecimal("100.00");
 
     private RiskFsm fsm() {
@@ -118,11 +119,10 @@ class RiskFsmTest {
 
         assertThat(r.newState().state()).isEqualTo(RiskState.HALTED);
         assertThat(r.newState().realizedLoss()).isEqualByComparingTo("105.00");
-        assertThat(r.events()).extracting(RiskEvent::type)
+        assertThat(r.events())
+                .extracting(RiskEvent::type)
                 .containsExactly(
-                        RiskEventType.BUDGET_CONSUMED,
-                        RiskEventType.STATE_TRANSITION,
-                        RiskEventType.HALT_TRIGGERED);
+                        RiskEventType.BUDGET_CONSUMED, RiskEventType.STATE_TRANSITION, RiskEventType.HALT_TRIGGERED);
     }
 
     @Test
@@ -159,23 +159,38 @@ class RiskFsmTest {
     @Test
     void onTradeStartedAtMaxHaltsWithMaxTradesReason() {
         DailyRiskState fourTrades = new DailyRiskState(
-                TENANT, SESSION, EQUITY, BUDGET, BigDecimal.ZERO, 4,
-                RiskState.HEALTHY, java.util.Optional.empty(), java.util.Optional.empty());
+                TENANT,
+                SESSION,
+                EQUITY,
+                BUDGET,
+                BigDecimal.ZERO,
+                4,
+                RiskState.HEALTHY,
+                java.util.Optional.empty(),
+                java.util.Optional.empty());
 
         RiskFsm.Result r = fsm().onTradeStarted(fourTrades, T0);
 
         assertThat(r.newState().tradesTaken()).isEqualTo(5);
         assertThat(r.newState().state()).isEqualTo(RiskState.HALTED);
         assertThat(r.newState().haltReason()).contains("MAX_TRADES");
-        assertThat(r.events()).extracting(RiskEvent::type)
+        assertThat(r.events())
+                .extracting(RiskEvent::type)
                 .containsExactly(RiskEventType.STATE_TRANSITION, RiskEventType.HALT_TRIGGERED);
     }
 
     @Test
     void onTradeStartedAtMaxFromBudgetLowAlsoHalts() {
         DailyRiskState fourTradesBudgetLow = new DailyRiskState(
-                TENANT, SESSION, EQUITY, BUDGET, new BigDecimal("75.00"), 4,
-                RiskState.BUDGET_LOW, java.util.Optional.empty(), java.util.Optional.empty());
+                TENANT,
+                SESSION,
+                EQUITY,
+                BUDGET,
+                new BigDecimal("75.00"),
+                4,
+                RiskState.BUDGET_LOW,
+                java.util.Optional.empty(),
+                java.util.Optional.empty());
 
         RiskFsm.Result r = fsm().onTradeStarted(fourTradesBudgetLow, T0);
 
@@ -199,7 +214,8 @@ class RiskFsmTest {
 
         assertThat(r.newState().state()).isEqualTo(RiskState.HALTED);
         assertThat(r.newState().haltReason()).contains("NEWS_BLACKOUT");
-        assertThat(r.events()).extracting(RiskEvent::type)
+        assertThat(r.events())
+                .extracting(RiskEvent::type)
                 .containsExactly(RiskEventType.STATE_TRANSITION, RiskEventType.HALT_TRIGGERED);
     }
 
@@ -236,20 +252,40 @@ class RiskFsmTest {
 
     private static DailyRiskState healthy() {
         return new DailyRiskState(
-                TENANT, SESSION, EQUITY, BUDGET, BigDecimal.ZERO, 0,
-                RiskState.HEALTHY, java.util.Optional.empty(), java.util.Optional.empty());
+                TENANT,
+                SESSION,
+                EQUITY,
+                BUDGET,
+                BigDecimal.ZERO,
+                0,
+                RiskState.HEALTHY,
+                java.util.Optional.empty(),
+                java.util.Optional.empty());
     }
 
     private static DailyRiskState stateWithLoss(BigDecimal loss, RiskState state) {
         return new DailyRiskState(
-                TENANT, SESSION, EQUITY, BUDGET, loss, 0,
-                state, java.util.Optional.empty(), java.util.Optional.empty());
+                TENANT,
+                SESSION,
+                EQUITY,
+                BUDGET,
+                loss,
+                0,
+                state,
+                java.util.Optional.empty(),
+                java.util.Optional.empty());
     }
 
     private static DailyRiskState haltedState(BigDecimal loss) {
         return new DailyRiskState(
-                TENANT, SESSION, EQUITY, BUDGET, loss, 0,
-                RiskState.HALTED, java.util.Optional.of(T0),
+                TENANT,
+                SESSION,
+                EQUITY,
+                BUDGET,
+                loss,
+                0,
+                RiskState.HALTED,
+                java.util.Optional.of(T0),
                 java.util.Optional.of("BUDGET_EXHAUSTED"));
     }
 }

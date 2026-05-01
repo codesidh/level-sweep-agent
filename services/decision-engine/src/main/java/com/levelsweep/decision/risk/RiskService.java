@@ -82,8 +82,7 @@ public class RiskService {
      * Reset for a new trading session. Computes the loss budget per §11.2
      * ({@code 2% × startingEquity}) and persists the fresh HEALTHY state.
      */
-    public DailyRiskState onDailyReset(
-            String tenantId, BigDecimal startingEquity, BigDecimal dailyLossBudget) {
+    public DailyRiskState onDailyReset(String tenantId, BigDecimal startingEquity, BigDecimal dailyLossBudget) {
         Objects.requireNonNull(tenantId, "tenantId");
         Objects.requireNonNull(startingEquity, "startingEquity");
         Objects.requireNonNull(dailyLossBudget, "dailyLossBudget");
@@ -100,10 +99,7 @@ public class RiskService {
         Objects.requireNonNull(tenantId, "tenantId");
         Objects.requireNonNull(realizedDelta, "realizedDelta");
         Instant now = clock.instant();
-        return mutate(
-                tenantId,
-                current -> fsm.onFillRealized(current, realizedDelta, now),
-                "onFillRealized");
+        return mutate(tenantId, current -> fsm.onFillRealized(current, realizedDelta, now), "onFillRealized");
     }
 
     /** Mark a new trade as having entered. */
@@ -118,24 +114,16 @@ public class RiskService {
         Objects.requireNonNull(tenantId, "tenantId");
         Objects.requireNonNull(reason, "reason");
         Instant now = clock.instant();
-        return mutate(
-                tenantId,
-                current -> fsm.onHaltManual(current, reason, now),
-                "onHaltManual");
+        return mutate(tenantId, current -> fsm.onHaltManual(current, reason, now), "onHaltManual");
     }
 
     // --- internals -------------------------------------------------------
 
     private DailyRiskState mutate(
-            String tenantId,
-            java.util.function.Function<DailyRiskState, RiskFsm.Result> transition,
-            String operation) {
+            String tenantId, java.util.function.Function<DailyRiskState, RiskFsm.Result> transition, String operation) {
         DailyRiskState current = stateByTenant.get(tenantId);
         if (current == null) {
-            LOG.warn(
-                    "Risk FSM operation {} called before daily reset for tenantId={} — ignored",
-                    operation,
-                    tenantId);
+            LOG.warn("Risk FSM operation {} called before daily reset for tenantId={} — ignored", operation, tenantId);
             throw new IllegalStateException(
                     "Risk FSM not initialized for tenantId=" + tenantId + " (call onDailyReset first)");
         }

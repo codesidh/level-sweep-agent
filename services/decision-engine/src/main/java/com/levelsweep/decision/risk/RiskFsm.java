@@ -63,13 +63,11 @@ public final class RiskFsm {
 
     public RiskFsm(int maxTradesPerDay, BigDecimal budgetLowFraction) {
         if (maxTradesPerDay <= 0) {
-            throw new IllegalArgumentException(
-                    "maxTradesPerDay must be > 0; got " + maxTradesPerDay);
+            throw new IllegalArgumentException("maxTradesPerDay must be > 0; got " + maxTradesPerDay);
         }
         Objects.requireNonNull(budgetLowFraction, "budgetLowFraction");
         if (budgetLowFraction.signum() <= 0 || budgetLowFraction.compareTo(BigDecimal.ONE) >= 0) {
-            throw new IllegalArgumentException(
-                    "budgetLowFraction must be in (0, 1); got " + budgetLowFraction);
+            throw new IllegalArgumentException("budgetLowFraction must be in (0, 1); got " + budgetLowFraction);
         }
         this.maxTradesPerDay = maxTradesPerDay;
         this.budgetLowFraction = budgetLowFraction;
@@ -102,8 +100,7 @@ public final class RiskFsm {
             throw new IllegalArgumentException("startingEquity must be >= 0; got " + startingEquity);
         }
         if (dailyLossBudget.signum() < 0) {
-            throw new IllegalArgumentException(
-                    "dailyLossBudget must be >= 0; got " + dailyLossBudget);
+            throw new IllegalArgumentException("dailyLossBudget must be >= 0; got " + dailyLossBudget);
         }
 
         DailyRiskState fresh = new DailyRiskState(
@@ -233,9 +230,11 @@ public final class RiskFsm {
             return new Result(current, List.of());
         }
         DailyRiskState halted = transitionTo(current, RiskState.HALTED, now, reason);
-        return new Result(halted, List.of(
-                transitionEvent(current.state(), RiskState.HALTED, halted, now),
-                haltEvent(halted, now, reason)));
+        return new Result(
+                halted,
+                List.of(
+                        transitionEvent(current.state(), RiskState.HALTED, halted, now),
+                        haltEvent(halted, now, reason)));
     }
 
     // --- internals -------------------------------------------------------
@@ -285,8 +284,7 @@ public final class RiskFsm {
                 s.haltReason());
     }
 
-    private static DailyRiskState transitionTo(
-            DailyRiskState s, RiskState target, Instant now, String reason) {
+    private static DailyRiskState transitionTo(DailyRiskState s, RiskState target, Instant now, String reason) {
         if (target == RiskState.HALTED) {
             return new DailyRiskState(
                     s.tenantId(),
@@ -311,8 +309,7 @@ public final class RiskFsm {
                 s.haltReason());
     }
 
-    private static RiskEvent budgetConsumedEvent(
-            DailyRiskState afterLoss, BigDecimal lossDelta, Instant now) {
+    private static RiskEvent budgetConsumedEvent(DailyRiskState afterLoss, BigDecimal lossDelta, Instant now) {
         return new RiskEvent(
                 afterLoss.tenantId(),
                 afterLoss.sessionDate(),
