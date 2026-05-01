@@ -20,9 +20,9 @@ variable "tags" {
 }
 
 variable "kubernetes_version" {
-  description = "AKS control-plane Kubernetes version. Pin via this variable so node-pool upgrades are explicit."
+  description = "AKS control-plane Kubernetes version. Pin via this variable so node-pool upgrades are explicit. Avoid versions that have aged into AKS LTS-only (Premium tier requirement) — verify with `az aks get-versions --location <region>`."
   type        = string
-  default     = "1.30"
+  default     = "1.34"
 }
 
 variable "subnet_aks_id" {
