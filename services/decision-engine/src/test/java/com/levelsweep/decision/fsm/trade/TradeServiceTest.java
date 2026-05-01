@@ -103,7 +103,8 @@ class TradeServiceTest {
         assertThat(tr.fsmKind()).isEqualTo("TRADE");
         assertThat(tr.fsmVersion()).isEqualTo(1);
         assertThat(tr.fsmId()).isEqualTo(id);
-        assertThat(tr.fromState()).contains(TradeState.PROPOSED);
+        // Cast away the wildcard so AssertJ's typed matchers cooperate.
+        assertThat(tr.fromState().orElse(null)).isEqualTo(TradeState.PROPOSED);
         assertThat(tr.toState()).isEqualTo(TradeState.ENTERED);
         assertThat(tr.event()).isEqualTo(TradeEvent.RISK_APPROVED);
         assertThat(tr.correlationId()).contains("corr-99");

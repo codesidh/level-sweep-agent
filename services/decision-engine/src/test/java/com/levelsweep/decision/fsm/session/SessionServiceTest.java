@@ -88,7 +88,8 @@ class SessionServiceTest {
         assertThat(tr.fsmKind()).isEqualTo("SESSION");
         assertThat(tr.fsmVersion()).isEqualTo(1);
         assertThat(tr.fsmId()).isEqualTo("2026-04-30");
-        assertThat(tr.fromState()).contains(SessionState.PRE_MARKET);
+        // Cast away the wildcard so AssertJ's typed matchers cooperate.
+        assertThat(tr.fromState().orElse(null)).isEqualTo(SessionState.PRE_MARKET);
         assertThat(tr.toState()).isEqualTo(SessionState.ARMED);
         assertThat(tr.event()).isEqualTo(SessionEvent.LEVELS_READY);
         assertThat(tr.correlationId()).contains("corr-42");
