@@ -39,6 +39,8 @@ dependencies {
     testImplementation(libs.quarkus.junit5)
     testImplementation(libs.quarkus.rest.assured)
     testImplementation(libs.assertj.core)
+    // Mockito is used by strike-selector and risk-FSM unit tests. Same
+    // versioned coordinate market-data-service's AlpacaRestClientTest uses.
     testImplementation(libs.mockito.core)
     testImplementation(libs.mockito.junit.jupiter)
 }
