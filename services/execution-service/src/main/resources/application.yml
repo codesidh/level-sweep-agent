@@ -11,6 +11,8 @@ quarkus:
     console:
       json:
         ~: true
+        # MDC keys mandatory per architecture-spec §18.3 + multi-tenant-readiness skill.
+        # tenant_id and trace_id MUST appear on every log line.
         additional-field:
           "tenant_id":
             value: "${TENANT_ID:OWNER}"
@@ -29,23 +31,65 @@ quarkus:
       prometheus:
         enabled: true
         path: /q/metrics
+  # SmallRye Health — liveness/readiness endpoints exposed to AKS probes
+  # (architecture-spec §17.4 / §21.1). Default root-path is already /q/health;
+  # declared explicitly so future operators see it documented.
+  smallrye-health:
+    root-path: /q/health
+
+  # MS SQL datasource (architecture-spec §13.1). Phase 3 Step 1 does not write
+  # to the DB — the orders + fills + stops tables land in Step 2/3. Health is
+  # disabled so a transient DB outage does not flap liveness; readiness is
+  # FSM-driven (will be wired in Step 2+).
   datasource:
     db-kind: mssql
     username: "${MSSQL_USER:sa}"
     password: "${MSSQL_PASSWORD:LevelSweep!2026}"
     jdbc:
       url: "${MSSQL_URL:jdbc:sqlserver://localhost:1433;databaseName=level_sweep;encrypt=false}"
+    health:
+      enabled: false
 
+# Kafka topic consumed — see architecture-spec §12.1 row 5
+# (tenant.commands). Execution Service joins consumer group `execution-service`
+# and reads the TradeProposed stream produced by the decision-engine Trade Saga.
+# Auto-offset-reset is `latest` so a restart does not replay 30 days of historic
+# trades (idempotent client_order_id keys would prevent duplicate orders, but
+# the in-flight FSM state would still be incoherent). Replay parity for backfill
+# flows through the Replay Harness in Phase 3 Step 7, not through Kafka.
 kafka:
   bootstrap:
     servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
 
+mp:
+  messaging:
+    incoming:
+      # The value deserializer is the typed TradeProposedDeserializer subclass
+      # (extends ObjectMapperDeserializer<TradeProposed>); this is the canonical
+      # Quarkus recipe for Jackson-based deserialization because Kafka discards
+      # type info on the wire and a plain ObjectMapperDeserializer wouldn't know
+      # what to instantiate. Mirrors decision-engine's BarDeserializer wiring.
+      # See: https://quarkus.io/guides/kafka#kafka-serialization
+      trade-proposed-in:
+        connector: smallrye-kafka
+        topic: tenant.commands
+        group.id: execution-service
+        auto.offset.reset: latest
+        key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+        value.deserializer: com.levelsweep.execution.ingest.TradeProposedDeserializer
+    outgoing: { }
+
 alpaca:
   # Phase A: owner token from env / Key Vault. Phase B: per-tenant OAuth.
+  # Phase 3 Step 2 (order placement) wires the Alpaca REST client. The S2 PR
+  # adds the SDK / hand-rolled HTTP client and the corresponding @ConfigProperty
+  # bindings.
   base-url: "${ALPACA_BASE_URL:https://paper-api.alpaca.markets}"
   key-id: "${ALPACA_KEY_ID:}"
   secret-key: "${ALPACA_SECRET_KEY:}"
 
+# Per-tenant + per-trace MDC keys. `tenant.id` is read by the startup banner
+# and by future order/fill/stop components via @ConfigProperty.
 levelsweep:
   tenant:
     bootstrap-id: OWNER
@@ -55,3 +99,58 @@ levelsweep:
       - trace_id
       - trade_id
       - client_order_id
+  feature-flags:
+    # Phase B flags — see docs/feature-flags.md. ALL OFF.
+    phase-b-multi-tenant-onboarding: false
+    phase-b-alpaca-oauth: false
+
+tenant:
+  id: "${TENANT_ID:OWNER}"
+
+# Production profile — when the App Insights Java agent is attached
+# (-javaagent at runtime), it owns the full OTel pipeline (traces + metrics +
+# logs) and auto-instruments JDBC / Mongo / Kafka / SLF4J. Disabling Quarkus'
+# own OTel here prevents (a) double-emit, (b) SDK-lifecycle races on shutdown,
+# and (c) confused trace IDs when both pipes register exporters. Mirrors
+# decision-engine + market-data-service.
+#
+# The dev cluster has no Kafka in Phase 3 (Strimzi lands in Phase 6 per
+# architecture-spec §12), so the trade-proposed-in incoming channel swaps to
+# the in-memory connector. The @Incoming-annotated TradeProposedConsumer still
+# wires up — it just receives events from the in-memory bus instead of Kafka.
+# In dev nothing produces to the in-memory channel yet, so the consumer is
+# dormant by design until Phase 3 Step 7 (Replay Harness) feeds it.
+"%prod":
+  quarkus:
+    opentelemetry:
+      enabled: false
+    datasource:
+      health:
+        enabled: false
+  mp:
+    messaging:
+      incoming:
+        trade-proposed-in:
+          connector: smallrye-in-memory
+
+# Test profile — Quarkus dev-services would otherwise try to spin up Mongo,
+# MS SQL, and Kafka containers in CI. Disable them here so unit tests run
+# without Docker. The trade-proposed-in incoming channel switches to in-memory
+# so @QuarkusTest doesn't try to bootstrap a Kafka client; @Incoming wiring
+# still validates at build-time. Scheduler is off so the (currently-empty)
+# S6 EOD-flatten cron does not flap test wall-clock.
+"%test":
+  quarkus:
+    scheduler:
+      enabled: false
+    datasource:
+      devservices:
+        enabled: false
+    kafka:
+      devservices:
+        enabled: false
+  mp:
+    messaging:
+      incoming:
+        trade-proposed-in:
+          connector: smallrye-in-memory

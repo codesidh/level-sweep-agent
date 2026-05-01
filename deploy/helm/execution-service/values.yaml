@@ -1,0 +1,138 @@
+# =============================================================================
+# Default values for execution-service.
+#
+# DEPLOYMENT NOTE (Phase 3 Step 1): this chart ships with the skeleton PR but
+# is NOT deployed by the existing CD workflows. The single-node AKS dev cluster
+# (operator's explicit Phase 1 / 2 decision — D2s_v4, ~2 vCPU / 8 GiB) cannot
+# host market-data-service AND execution-service simultaneously: each requires
+# 250m CPU / 768 MiB requests, and node DaemonSets + system overhead leave
+# < 500m CPU available. Operator decides when/how to deploy this chart — either
+# scale the dev cluster to a 2-node pool (Phase 7 plan) or stop
+# market-data-service first (works for short tests, but breaks bar publishing).
+#
+# Per-environment overrides are passed via `helm upgrade --install --set ...`
+# from the deploy workflow when it lands. Do NOT put secrets here — KV-mounted
+# values flow in via the Azure Key Vault CSI SecretProviderClass.
+# =============================================================================
+
+image:
+  # set per env in the deploy workflow, e.g. "<acr>.azurecr.io/execution-service".
+  repository: ""
+  # overridden per push to the immutable git SHA.
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Phase 3 single-instance per architecture-spec §16. Multi-replica + leader
+# election arrives in Phase 7 once the order-placement client is sharded by
+# tenant and the trade-updates websocket reconnect logic is leader-elected.
+replicas: 1
+
+# Deployment strategy. Phase 3 dev is single-node + single-replica, so
+# Recreate avoids the RollingUpdate deadlock where the new pod can't
+# schedule until the old one terminates. Phase 7 production overrides
+# this to RollingUpdate once the cluster has 2+ nodes.
+deployment:
+  strategy: Recreate
+  # maxSurge/maxUnavailable only used when strategy is RollingUpdate.
+  maxSurge: 1
+  maxUnavailable: 0
+
+service:
+  port: 8083
+  type: ClusterIP
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 768Mi
+  limits:
+    # Memory limit only — no CPU limit per Quarkus + JDK 21 best practice on
+    # K8s (CFS throttling kills latency tail). The HPA is added in Phase 7.
+    memory: 1536Mi
+
+# Plain-text application config. Anything secret comes from keyVault.objects.
+env:
+  TENANT_ID: "OWNER"
+  # Alpaca paper-trading API endpoint. The SIP websocket vars from
+  # market-data-service (ALPACA_FEED, ALPACA_SYMBOLS, ALPACA_WS_BASE_URL) are
+  # intentionally absent — execution-service does not consume the SIP feed.
+  ALPACA_BASE_URL: "https://paper-api.alpaca.markets"
+  # Kafka is not deployed in Phase 3 (Phase 6 introduces the Strimzi cluster).
+  # The trade-proposed-in incoming channel swaps to in-memory under %prod, so
+  # a bogus bootstrap is safe in dev.
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  MONGO_URL: "mongodb://mongo:27017"
+  MONGO_DB: "level_sweep"
+  MSSQL_URL: "jdbc:sqlserver://mssql:1433;databaseName=level_sweep;encrypt=false"
+  MSSQL_USER: "sa"
+  # Force the Quarkus profile to %prod so application.yml's
+  # `quarkus.opentelemetry.enabled: false` override kicks in. The App
+  # Insights Java agent (loaded as -javaagent in Dockerfile.jvm) owns the
+  # OTel pipeline in production; Quarkus' own OTel SDK is disabled to
+  # prevent double-emit + lifecycle races.
+  QUARKUS_PROFILE: "prod"
+  # Local-only OTel endpoint default. Unused in production because
+  # quarkus.opentelemetry.enabled is false under %prod, but kept so
+  # configuration shape matches dev / replay where Quarkus OTel is on.
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+
+# Workload identity binding (Azure AD federated → K8s ServiceAccount).
+workloadIdentity:
+  enabled: true
+  # Per-env: AKS-bound user-assigned MI client id. Phase 3 reuses the kubelet
+  # MI; Phase 7 swaps in a dedicated per-service MI federated to this SA.
+  clientId: ""
+
+keyVault:
+  enabled: true
+  # Per-env Azure AD tenant ID.
+  tenantId: ""
+  # Bare KV name (not URI). Set by the deploy workflow to keep template-side
+  # parsing trivial.
+  name: ""
+  # KV URI is stored on the SecretProviderClass too for traceability /
+  # downstream tooling.
+  vaultUri: ""
+  objects:
+    - name: alpaca-api-key
+      type: secret
+      env: ALPACA_API_KEY
+    - name: alpaca-secret-key
+      type: secret
+      env: ALPACA_SECRET_KEY
+    - name: applicationinsights-connection-string
+      type: secret
+      env: APPLICATIONINSIGHTS_CONNECTION_STRING
+      optional: true
+    # mssql-password is intentionally NOT mounted in Phase 3. Managed Azure
+    # SQL Database lands in Phase 7 per architecture-spec §13.1; until then,
+    # the orders/fills/stops repositories catch SQL exceptions and log a WARN.
+    # Adding the mount back here is a one-line change once Phase 7 provisions
+    # the DB and seeds the secret.
+
+healthCheck:
+  liveness:
+    path: /q/health/live
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    path: /q/health/ready
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+
+serviceAccount:
+  # Auto-derive from chart fullname when name is empty.
+  name: ""
+
+# Pod-level security context. Container-level overrides applied in deployment.yaml.
+podSecurityContext:
+  fsGroup: 100
+  runAsNonRoot: true
+  runAsUser: 100

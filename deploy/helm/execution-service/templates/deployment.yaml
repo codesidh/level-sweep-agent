@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "execution-service.fullname" . }}
+  labels:
+    {{- include "execution-service.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "execution-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    # Phase 3 dev: single-node, single-replica. RollingUpdate would create a
+    # second pod (maxSurge=1) before terminating the old one, but the single
+    # D2s_v4 node doesn't have the CPU headroom for two execution-service
+    # pods at once, so the new pod stays Pending and Helm's `--wait` times
+    # out ("UPGRADE FAILED: context deadline exceeded"). Recreate kills the
+    # old pod first → ~10s downtime → no resource contention.
+    # Phase 7 production scales to 2+ nodes and switches back to RollingUpdate
+    # with maxSurge=1, maxUnavailable=0.
+    type: {{ .Values.deployment.strategy | default "Recreate" }}
+    {{- if eq (.Values.deployment.strategy | default "Recreate") "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.deployment.maxSurge | default 1 }}
+      maxUnavailable: {{ .Values.deployment.maxUnavailable | default 0 }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "execution-service.selectorLabels" . | nindent 8 }}
+        {{- if .Values.workloadIdentity.enabled }}
+        # Required for the Azure Workload Identity webhook to inject the
+        # projected SA token + AZURE_* env into the pod.
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "execution-service.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: execution-service
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- if .Values.keyVault.enabled }}
+            {{- range .Values.keyVault.objects }}
+            {{- if .env }}
+            - name: {{ .env }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-%s" (include "execution-service.fullname" $) .name | trunc 63 | trimSuffix "-" }}
+                  key: {{ .name }}
+                  optional: {{ default false .optional }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+          volumeMounts:
+            # Quarkus needs a writable scratch dir; readOnlyRootFilesystem
+            # blocks /tmp by default.
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.keyVault.enabled }}
+            - name: kv-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.readiness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 100
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.keyVault.enabled }}
+        - name: kv-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "execution-service.fullname" . }}-kv
+        {{- end }}

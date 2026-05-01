@@ -1,0 +1,6 @@
+apiVersion: v2
+name: execution-service
+description: Phase 3 trade execution service — consumes TradeProposed and places Alpaca orders
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
