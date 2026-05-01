@@ -1,0 +1,120 @@
+LevelSweepAgent — Enterprise Architecture Document
+Export & Distribution Instructions
+
+================================================================
+SOURCE OF TRUTH
+================================================================
+The single HTML file is the source of truth:
+
+    docs/architecture/LevelSweepAgent-Architecture-v1.0.html
+
+It is intentionally self-contained — no external CDN, font, or
+asset call — so it renders identically on any machine, even
+offline. All formats below are derived from it.
+
+================================================================
+1. EXPORT TO PDF (for CIO / EA review)
+================================================================
+Recommended: Chromium-based browser (Chrome, Edge, Brave) or
+Firefox.
+
+  1. Open the HTML file in the browser.
+  2. File > Print  (Ctrl+P / Cmd+P).
+  3. Destination: "Save as PDF".
+  4. Layout: Portrait.
+  5. Paper size: A4.
+  6. Margins: Default  (the document already declares
+     @page { size: A4; margin: 18mm 16mm; })
+  7. Options: enable "Background graphics" — this is required
+     to keep the dark canvas and SVG diagrams.
+  8. Save as
+        LevelSweepAgent-Architecture-v1.0.pdf
+     in the same folder.
+
+Headless from CLI (no manual print dialog):
+
+    # Chrome / Chromium
+    chrome --headless=new --disable-gpu \
+      --print-to-pdf=docs/architecture/LevelSweepAgent-Architecture-v1.0.pdf \
+      --print-to-pdf-no-header \
+      --no-pdf-header-footer \
+      --virtual-time-budget=10000 \
+      "file://$(pwd)/docs/architecture/LevelSweepAgent-Architecture-v1.0.html"
+
+    # wkhtmltopdf (legacy alt)
+    wkhtmltopdf --enable-local-file-access \
+      --background --print-media-type \
+      docs/architecture/LevelSweepAgent-Architecture-v1.0.html \
+      docs/architecture/LevelSweepAgent-Architecture-v1.0.pdf
+
+================================================================
+2. EXPORT INDIVIDUAL DIAGRAMS (for slide decks)
+================================================================
+Each diagram has an inline <svg> with a stable id attribute and a
+caption strip with a unique DIAG-NN identifier. To extract:
+
+  1. Open the HTML in a browser.
+  2. Right-click the diagram > "Inspect".
+  3. Copy the outer <svg>...</svg> block.
+  4. Save as docs/architecture/assets/diag-NN.svg.
+
+Or use a one-shot script (Node.js):
+
+    node -e "const fs=require('fs');const \$=require('cheerio').load(fs.readFileSync('docs/architecture/LevelSweepAgent-Architecture-v1.0.html'));\$('svg').each((i,el)=>{fs.writeFileSync(\`docs/architecture/assets/diag-\${i+1}.svg\`,'<?xml version=\"1.0\"?>'+\$.html(el))});"
+
+PNG export (for PowerPoint that doesn't accept SVG):
+
+    inkscape --export-type=png --export-dpi=200 \
+      docs/architecture/assets/diag-05.svg
+
+================================================================
+3. PRESENTATION DECK (PPTX)
+================================================================
+Recommended cover slides for a 30-min CIO walkthrough:
+
+    Slide 1 — DIAG-05 Reference Tech Stack
+    Slide 2 — DIAG-06 System Context
+    Slide 3 — DIAG-08 AI Boundaries
+    Slide 4 — DIAG-11 Hot Path & Latency
+    Slide 5 — DIAG-12 Trade Saga FSM
+    Slide 6 — DIAG-14 Azure Deployment
+    Slide 7 — DIAG-20 Phased Roadmap
+    Slide 8 — Risk register table (§22)
+    Slide 9 — Phase B unlock criteria (§16.2)
+
+Drop each PNG into a black-canvas template; use system Inter or
+Segoe UI to match the document.
+
+================================================================
+4. WATERMARKING
+================================================================
+The document already declares a 6-degree, 6%-opacity watermark
+"RESTRICTED · PHASE A" that prints diagonally across each page
+when @media print is active. To change the watermark text, edit
+the .watermark element near the top of the <body>.
+
+================================================================
+5. RE-ISSUING THE DOCUMENT
+================================================================
+Do not edit the HTML in place when the underlying
+architecture-spec.md version increments. Instead:
+
+  1. Increment the version in <h1 class="cover-title"> meta cells.
+  2. Add a row to the §DC Version History table.
+  3. Save as LevelSweepAgent-Architecture-v{N+1}.html
+     alongside the prior version.
+  4. Update the link in docs/architecture/ index (if present).
+
+================================================================
+6. DESIGN SYSTEM
+================================================================
+The visual language (colours, typography, iconography, layout
+grid) is codified in a Claude Code skill at:
+
+    .claude/skills/architecture-diagrams/SKILL.md
+
+When generating any new diagram or document for this project,
+that skill auto-loads on triggers like "architecture diagram",
+"tech stack diagram", "EA deck", "CIO review".
+
+================================================================

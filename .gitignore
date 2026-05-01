@@ -69,10 +69,18 @@ venv/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+*.tfplan
+tfplan.out
 crash.log
 crash.*.log
 .terraformrc
 terraform.rc
+
+# --- Large media (use Git LFS or external storage) ---
+*.mp4
+*.MP4
+*.mov
+*.MOV
 
 # --- Docker ---
 *.pid
