@@ -121,7 +121,11 @@ class DecisionReplayHarnessTest {
                 .fromSeed(99L)
                 .onDate(a.date())
                 .openPrice(594.0)
-                .withLevels(a.levels().pdh(), a.levels().pdl(), a.levels().pmh(), a.levels().pml())
+                .withLevels(
+                        a.levels().pdh(),
+                        a.levels().pdl(),
+                        a.levels().pmh(),
+                        a.levels().pml())
                 .barCount(a.bars2m().size())
                 .withStackBias(SyntheticSessionFixtures.StackBias.BEARISH)
                 .injectSweep(80, SyntheticSessionFixtures.SweepKind.PDH_SHORT, new BigDecimal("0.50"))
