@@ -65,6 +65,12 @@ env:
   # quarkus.opentelemetry.enabled is false under %prod, but kept so
   # configuration shape matches dev / replay where Quarkus OTel is on.
   OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  # OTel service.name — App Insights agent reads this and stamps it as
+  # cloud_RoleName on every trace/log/metric. Without it, queries that
+  # filter on cloud_RoleName == "market-data-service" see zero rows
+  # (the agent default is "unknown_service:java"), and the 5 Phase 1
+  # alerts in observability/alerts.tf never match.
+  OTEL_SERVICE_NAME: "market-data-service"
 
 # Workload identity binding (Azure AD federated → K8s ServiceAccount).
 workloadIdentity:
