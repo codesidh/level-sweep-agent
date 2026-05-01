@@ -100,8 +100,15 @@ module "aks" {
   # Phase 1 dev cost-tuned defaults — see `architecture-spec.md` §16 cost table.
   # Production (Phase 7) overrides these in `infra/environments/prod/main.tf`
   # for HA + sustained throughput.
+  #
+  # vm_size: Standard_D2s_v4 (2 vCPU, 8 GB, amd64, ~$70/mo). Cheapest amd64
+  # option allowed by this subscription's quota in eastus — B-series amd64
+  # (cheaper, ~$60/mo) and Dsv5 series are not included in the allowed list
+  # for new Pay-As-You-Go subscriptions. ARM-based B-series (b2ps_v2) is
+  # allowed but would require multi-arch container builds. Phase 7 may
+  # request quota extension for B-series amd64 to drop cost further.
   node_count          = 1
-  vm_size             = "Standard_B2ms"
+  vm_size             = "Standard_D2s_v4"
   enable_azure_policy = false
   outbound_type       = "loadBalancer"
 

@@ -79,16 +79,20 @@ This is a one-time, operator-run flow. CI does not apply — only validates.
 | `rg-levelsweep-dev-acr`              | ACR (Basic SKU, admin disabled)                                           |
 | `rg-levelsweep-dev-obs`              | Log Analytics workspace (PerGB2018, 30d), App Insights                    |
 | `rg-levelsweep-dev-kv`               | Key Vault (RBAC, soft-delete, 4 placeholder secrets)                      |
-| `rg-levelsweep-dev-aks`              | AKS cluster (1.30, 1× Standard_B2ms, OIDC + workload identity, LB egress) |
+| `rg-levelsweep-dev-aks`              | AKS cluster (1.34, 1× Standard_D2s_v4, OIDC + workload identity, LB egress) |
 | `rg-levelsweep-dev-gha`              | User-assigned MI + 3 federated creds + scoped roles                       |
 
 ### Estimated monthly cost (Phase 1 dev)
 
-~$75–85 / month, dominated by:
+~$85–95 / month, dominated by:
 - AKS Free tier control plane: $0
-- 1× Standard_B2ms node (2 vCPU burstable, 8 GB): ~$60
+- 1× Standard_D2s_v4 node (2 vCPU amd64, 8 GB): ~$70
 - ACR Basic: ~$5
 - Log Analytics + App Insights at light ingest: ~$10–20
+
+The dev VM size is constrained by the new Pay-As-You-Go subscription's
+default SKU quota for eastus, which excludes B-series amd64 (~$60/mo).
+Quota extension can be requested for Phase 7 if cost becomes a constraint.
 
 Phase 7 production overrides bump this for HA + sustained throughput. The
 cost-tuned values are set in `environments/dev/main.tf` (`node_count`,
