@@ -13,6 +13,13 @@ on:
       - "**/*.md"
       - "adr/**"
       - "infra/**"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual trigger (e.g., 're-build image after infra-only change')."
+        required: false
+        type: string
+        default: "manual rebuild"
 
 permissions:
   contents: read
