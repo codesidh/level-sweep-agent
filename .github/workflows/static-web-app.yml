@@ -1,0 +1,70 @@
+name: static-web-app
+
+# Publishes docs/architecture/ to the dev Azure Static Web App. Public URL is
+# the SWA's `default_host_name` (terraform output `static_web_app_host_name`).
+#
+# Trigger paths are scoped to the docs/architecture tree so unrelated PRs
+# don't trigger a deploy.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/architecture/**"
+      - ".github/workflows/static-web-app.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/architecture/**"
+      - ".github/workflows/static-web-app.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write   # azure/static-web-apps-deploy comments preview URLs
+
+concurrency:
+  group: static-web-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: deploy docs to Static Web App
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Mirror the secret into env so we can reference it in the step `if:`
+      # — GitHub Actions disallows `secrets.*` directly in conditions.
+      SWA_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          lfs: false
+
+      # Skipped before the operator runs `terraform apply` (which creates
+      # the SWA and exposes its api_key) and before AZURE_STATIC_WEB_APPS_API_TOKEN
+      # is set as a repo secret. The workflow stays GHCR-of-docs-paths-only
+      # until the token is configured.
+      - name: Skip if SWA token not configured
+        if: env.SWA_TOKEN == ''
+        run: |
+          echo "::notice::AZURE_STATIC_WEB_APPS_API_TOKEN not set yet — skipping deploy."
+          echo "::notice::After 'terraform apply' creates the SWA, store its api_key as that secret."
+          exit 0
+
+      # Static Web Apps Deploy uploads the contents of `app_location`; nothing
+      # is built (the architecture HTML is pre-rendered).
+      - name: Deploy to Azure Static Web Apps
+        if: env.SWA_TOKEN != ''
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: docs/architecture
+          # Empty api_location and output_location — pure static, no build.
+          api_location: ""
+          output_location: ""
+          skip_app_build: true

@@ -115,6 +115,14 @@ module "aks" {
   depends_on = [module.networking]
 }
 
+module "static_web_app" {
+  source      = "../../modules/static_web_app"
+  project     = var.project
+  environment = local.environment
+  location    = var.location
+  tags        = local.tags
+}
+
 module "github_oidc" {
   source                = "../../modules/github_oidc"
   project               = var.project
@@ -254,4 +262,15 @@ output "gha_client_id" {
 output "tenant_id" {
   description = "Azure AD tenant ID — set as the AZURE_TENANT_ID GitHub secret."
   value       = module.github_oidc.tenant_id
+}
+
+output "static_web_app_host_name" {
+  description = "Public URL host for the architecture-docs Static Web App."
+  value       = module.static_web_app.default_host_name
+}
+
+output "static_web_app_api_key" {
+  description = "Deployment token for the architecture-docs Static Web App. Set as the AZURE_STATIC_WEB_APPS_API_TOKEN repo secret."
+  value       = module.static_web_app.api_key
+  sensitive   = true
 }

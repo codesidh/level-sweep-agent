@@ -13,6 +13,9 @@ on:
       - "**/*.md"
       - "adr/**"
       - "infra/**"
+      - ".claude/**"
+      - "references/**"
+      - "deploy/helm/**"
   workflow_dispatch:
     inputs:
       reason:

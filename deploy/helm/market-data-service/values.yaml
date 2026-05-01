@@ -16,6 +16,16 @@ image:
 # election arrives in Phase 7 once the WS adapter is sharded.
 replicas: 1
 
+# Deployment strategy. Phase 1 dev is single-node + single-replica, so
+# Recreate avoids the RollingUpdate deadlock where the new pod can't
+# schedule until the old one terminates. Phase 7 production overrides
+# this to RollingUpdate once the cluster has 2+ nodes.
+deployment:
+  strategy: Recreate
+  # maxSurge/maxUnavailable only used when strategy is RollingUpdate.
+  maxSurge: 1
+  maxUnavailable: 0
+
 service:
   port: 8081
   type: ClusterIP
