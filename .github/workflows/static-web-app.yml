@@ -33,18 +33,34 @@ jobs:
     name: deploy docs to Static Web App
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Mirror the secret into env so we can reference it in the step `if:`
+      # — GitHub Actions disallows `secrets.*` directly in conditions.
+      SWA_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: false
           lfs: false
 
+      # Skipped before the operator runs `terraform apply` (which creates
+      # the SWA and exposes its api_key) and before AZURE_STATIC_WEB_APPS_API_TOKEN
+      # is set as a repo secret. The workflow stays GHCR-of-docs-paths-only
+      # until the token is configured.
+      - name: Skip if SWA token not configured
+        if: env.SWA_TOKEN == ''
+        run: |
+          echo "::notice::AZURE_STATIC_WEB_APPS_API_TOKEN not set yet — skipping deploy."
+          echo "::notice::After 'terraform apply' creates the SWA, store its api_key as that secret."
+          exit 0
+
       # Static Web Apps Deploy uploads the contents of `app_location`; nothing
       # is built (the architecture HTML is pre-rendered).
       - name: Deploy to Azure Static Web Apps
+        if: env.SWA_TOKEN != ''
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
           app_location: docs/architecture
