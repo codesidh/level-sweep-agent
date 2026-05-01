@@ -102,8 +102,7 @@ class TradeProposedKafkaPublisherTest {
         // send() returns a failed Uni; publisher must subscribe with a log-only failure
         // handler and not throw to the calling CDI dispatcher thread (which is the
         // saga's Kafka bar-consumer thread).
-        when(emitter.send(anyRecord()))
-                .thenReturn(Uni.createFrom().failure(new RuntimeException("broker down")));
+        when(emitter.send(anyRecord())).thenReturn(Uni.createFrom().failure(new RuntimeException("broker down")));
 
         // No exception expected — fire-and-forget pattern.
         publisher.onTradeProposed(eventOf("OWNER", "trade-x"));

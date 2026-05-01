@@ -53,7 +53,8 @@ public class TradeProposedKafkaPublisher {
     private final MutinyEmitter<Record<String, TradeProposed>> emitter;
 
     @Inject
-    public TradeProposedKafkaPublisher(@Channel("trade-proposed-out") MutinyEmitter<Record<String, TradeProposed>> emitter) {
+    public TradeProposedKafkaPublisher(
+            @Channel("trade-proposed-out") MutinyEmitter<Record<String, TradeProposed>> emitter) {
         this.emitter = Objects.requireNonNull(emitter, "emitter");
     }
 
