@@ -19,6 +19,10 @@ dependencies {
     implementation(libs.quarkus.opentelemetry)
     implementation(libs.quarkus.kafka.client)
     implementation(libs.quarkus.messaging.kafka)
+    // Phase 1 dev runs without a Kafka cluster — the %prod profile routes
+    // bar emitters to the in-memory connector. Phase 6 Strimzi rollout
+    // can drop this dep when the in-memory fallback is no longer used.
+    implementation(libs.smallrye.messaging.in.memory)
     implementation(libs.quarkus.mongodb.client)
     implementation(libs.quarkus.agroal)
     implementation(libs.quarkus.jdbc.mssql)
