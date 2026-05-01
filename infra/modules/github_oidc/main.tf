@@ -79,3 +79,13 @@ resource "azurerm_role_assignment" "gha_kv_secrets_user" {
   role_definition_name = "Key Vault Secrets User"
   principal_id         = azurerm_user_assigned_identity.gha.principal_id
 }
+
+# Phase 1 dev: GHA also writes to KV via the bootstrap-kv-secrets workflow,
+# which copies GitHub env secrets into KV at first deploy. Phase 7 will
+# replace this with a dedicated rotator identity scoped to specific
+# secret names, but for dev the deployer is also the seed-er.
+resource "azurerm_role_assignment" "gha_kv_secrets_officer" {
+  scope                = var.key_vault_id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = azurerm_user_assigned_identity.gha.principal_id
+}
