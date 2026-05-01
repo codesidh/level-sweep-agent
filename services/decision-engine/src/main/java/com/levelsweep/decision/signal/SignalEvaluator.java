@@ -114,18 +114,13 @@ public class SignalEvaluator {
         // ---- Pre-checks (any failure → SKIP, short-circuit) -----------------
         if (bar.timeframe() != Timeframe.TWO_MIN) {
             return SignalEvaluation.skip(
-                    levels.tenantId(),
-                    bar.symbol(),
-                    bar.closeTime(),
-                    List.of("wrong_timeframe:" + bar.timeframe()));
+                    levels.tenantId(), bar.symbol(), bar.closeTime(), List.of("wrong_timeframe:" + bar.timeframe()));
         }
         if (!snapshot.emasReady()) {
-            return SignalEvaluation.skip(
-                    levels.tenantId(), bar.symbol(), bar.closeTime(), List.of("emas_warming_up"));
+            return SignalEvaluation.skip(levels.tenantId(), bar.symbol(), bar.closeTime(), List.of("emas_warming_up"));
         }
         if (snapshot.atr14() == null) {
-            return SignalEvaluation.skip(
-                    levels.tenantId(), bar.symbol(), bar.closeTime(), List.of("atr_warming_up"));
+            return SignalEvaluation.skip(levels.tenantId(), bar.symbol(), bar.closeTime(), List.of("atr_warming_up"));
         }
 
         BigDecimal atr = snapshot.atr14();
@@ -134,8 +129,7 @@ public class SignalEvaluator {
         // ---- Sweep detection — pick the largest wick if multiple match -----
         SweepCandidate best = pickBestSweep(bar, levels, buffer);
         if (best == null) {
-            return SignalEvaluation.skip(
-                    levels.tenantId(), bar.symbol(), bar.closeTime(), List.of("sweep:none"));
+            return SignalEvaluation.skip(levels.tenantId(), bar.symbol(), bar.closeTime(), List.of("sweep:none"));
         }
 
         // ---- EMA stack confluence (§6.1) ------------------------------------
@@ -225,8 +219,7 @@ public class SignalEvaluator {
         BigDecimal threshold = levelPrice.add(buffer);
         if (bar.high().compareTo(threshold) > 0 && bar.close().compareTo(levelPrice) < 0) {
             BigDecimal wick = bar.high().subtract(levelPrice);
-            return chooseLargerWick(
-                    currentBest, new SweepCandidate(which, SignalAction.ENTER_SHORT, levelPrice, wick));
+            return chooseLargerWick(currentBest, new SweepCandidate(which, SignalAction.ENTER_SHORT, levelPrice, wick));
         }
         return currentBest;
     }
@@ -236,8 +229,7 @@ public class SignalEvaluator {
         BigDecimal threshold = levelPrice.subtract(buffer);
         if (bar.low().compareTo(threshold) < 0 && bar.close().compareTo(levelPrice) > 0) {
             BigDecimal wick = levelPrice.subtract(bar.low());
-            return chooseLargerWick(
-                    currentBest, new SweepCandidate(which, SignalAction.ENTER_LONG, levelPrice, wick));
+            return chooseLargerWick(currentBest, new SweepCandidate(which, SignalAction.ENTER_LONG, levelPrice, wick));
         }
         return currentBest;
     }

@@ -56,22 +56,12 @@ class SignalEvaluatorTest {
 
     private static IndicatorSnapshot bullishSnapshot() {
         return new IndicatorSnapshot(
-                "SPY",
-                CLOSE_TIME,
-                new BigDecimal("595.00"),
-                new BigDecimal("594.00"),
-                new BigDecimal("593.00"),
-                ATR);
+                "SPY", CLOSE_TIME, new BigDecimal("595.00"), new BigDecimal("594.00"), new BigDecimal("593.00"), ATR);
     }
 
     private static IndicatorSnapshot bearishSnapshot() {
         return new IndicatorSnapshot(
-                "SPY",
-                CLOSE_TIME,
-                new BigDecimal("593.00"),
-                new BigDecimal("594.00"),
-                new BigDecimal("595.00"),
-                ATR);
+                "SPY", CLOSE_TIME, new BigDecimal("593.00"), new BigDecimal("594.00"), new BigDecimal("595.00"), ATR);
     }
 
     private static Bar bar(Timeframe tf, String open, String high, String low, String close) {
@@ -114,12 +104,7 @@ class SignalEvaluatorTest {
     void skipsWhenAtrWarmingUp() {
         Bar twoMin = bar(Timeframe.TWO_MIN, "590.10", "590.30", "589.50", "590.20");
         IndicatorSnapshot noAtr = new IndicatorSnapshot(
-                "SPY",
-                CLOSE_TIME,
-                new BigDecimal("595.00"),
-                new BigDecimal("594.00"),
-                new BigDecimal("593.00"),
-                null);
+                "SPY", CLOSE_TIME, new BigDecimal("595.00"), new BigDecimal("594.00"), new BigDecimal("593.00"), null);
 
         SignalEvaluation eval = evaluator.evaluate(twoMin, noAtr, standardLevels());
 
@@ -162,8 +147,7 @@ class SignalEvaluatorTest {
         SignalEvaluation eval = evaluator.evaluate(twoMin, bearishSnapshot(), standardLevels());
 
         assertThat(eval.action()).isEqualTo(SignalAction.SKIP);
-        assertThat(eval.reasons())
-                .containsExactly("sweep:PDL", "ema_stack_mismatch:LONG_setup_but_13<48<200");
+        assertThat(eval.reasons()).containsExactly("sweep:PDL", "ema_stack_mismatch:LONG_setup_but_13<48<200");
     }
 
     @Test
@@ -171,12 +155,7 @@ class SignalEvaluatorTest {
         // EMAs ordered bullish but ema13-ema48 gap is only 0.10 (< 0.30 floor).
         Bar twoMin = bar(Timeframe.TWO_MIN, "590.10", "590.30", "589.50", "590.20");
         IndicatorSnapshot tightStack = new IndicatorSnapshot(
-                "SPY",
-                CLOSE_TIME,
-                new BigDecimal("594.10"),
-                new BigDecimal("594.00"),
-                new BigDecimal("593.00"),
-                ATR);
+                "SPY", CLOSE_TIME, new BigDecimal("594.10"), new BigDecimal("594.00"), new BigDecimal("593.00"), ATR);
 
         SignalEvaluation eval = evaluator.evaluate(twoMin, tightStack, standardLevels());
 

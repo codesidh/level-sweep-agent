@@ -59,9 +59,8 @@ public record SignalEvaluation(
 
         if (action == SignalAction.SKIP) {
             if (level.isPresent() || optionSide.isPresent() || levelPrice.isPresent()) {
-                throw new IllegalArgumentException(
-                        "SKIP must have empty level/optionSide/levelPrice; got level="
-                                + level + " side=" + optionSide + " price=" + levelPrice);
+                throw new IllegalArgumentException("SKIP must have empty level/optionSide/levelPrice; got level="
+                        + level + " side=" + optionSide + " price=" + levelPrice);
             }
         } else {
             if (level.isEmpty() || optionSide.isEmpty() || levelPrice.isEmpty()) {
@@ -80,8 +79,7 @@ public record SignalEvaluation(
      * Construct a skip evaluation. The {@code reasons} list must be non-empty —
      * a skip without a recorded reason violates the audit-trail contract.
      */
-    public static SignalEvaluation skip(
-            String tenantId, String symbol, Instant evaluatedAt, List<String> reasons) {
+    public static SignalEvaluation skip(String tenantId, String symbol, Instant evaluatedAt, List<String> reasons) {
         Objects.requireNonNull(reasons, "reasons");
         if (reasons.isEmpty()) {
             throw new IllegalArgumentException("skip must carry at least one reason");

@@ -70,10 +70,7 @@ public class SignalBarRouter implements BarRouter {
 
         if (maybeSnapshot.isEmpty()) {
             if (LOG.isDebugEnabled()) {
-                LOG.debug(
-                        "signal_skip reason=no_indicators symbol={} closeTime={}",
-                        bar.symbol(),
-                        bar.closeTime());
+                LOG.debug("signal_skip reason=no_indicators symbol={} closeTime={}", bar.symbol(), bar.closeTime());
             }
             return;
         }
