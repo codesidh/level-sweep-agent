@@ -235,8 +235,7 @@ class TradeSagaTest {
         when(riskService.canTakeTrade(TENANT)).thenReturn(true);
         OptionContract contract = sampleCall();
         when(strikeSelectorService.selectFor(eq("SPY"), any(), eq(OptionSide.CALL), eq(SESSION)))
-                .thenReturn(new StrikeSelectionResult.Selected(
-                        new StrikeSelection(contract, "atm_call", List.of())));
+                .thenReturn(new StrikeSelectionResult.Selected(new StrikeSelection(contract, "atm_call", List.of())));
 
         String tradeId = "trade-1";
         TradeFsmInstance proposed = new TradeFsmInstance(
@@ -285,8 +284,7 @@ class TradeSagaTest {
         assertThat(skippedSink.events).isEmpty();
 
         // Counter
-        assertThat(registry.counter(
-                                "decision.saga.evaluations.total", Tags.of("outcome", TradeSaga.OUTCOME_PROPOSED))
+        assertThat(registry.counter("decision.saga.evaluations.total", Tags.of("outcome", TradeSaga.OUTCOME_PROPOSED))
                         .count())
                 .isEqualTo(1.0);
     }
@@ -478,7 +476,8 @@ class TradeSagaTest {
         }
 
         @Override
-        public <U extends T> Event<U> select(jakarta.enterprise.util.TypeLiteral<U> subtype, java.lang.annotation.Annotation... qualifiers) {
+        public <U extends T> Event<U> select(
+                jakarta.enterprise.util.TypeLiteral<U> subtype, java.lang.annotation.Annotation... qualifiers) {
             throw new UnsupportedOperationException();
         }
     }

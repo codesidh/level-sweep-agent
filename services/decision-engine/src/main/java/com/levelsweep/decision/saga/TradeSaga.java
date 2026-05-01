@@ -182,8 +182,8 @@ public class TradeSaga {
             // ---- 2. Signal evaluation --------------------------------------
             SignalEvaluation eval = signalEvaluator.evaluate(bar, snapshot, levels);
             if (eval.action() == SignalAction.SKIP) {
-                TradeSkipped skipped = buildSkipped(
-                        bar, levels, TradeSkipped.STAGE_SIGNAL_SKIP, eval.reasons(), correlationId);
+                TradeSkipped skipped =
+                        buildSkipped(bar, levels, TradeSkipped.STAGE_SIGNAL_SKIP, eval.reasons(), correlationId);
                 return finishSkipped(skipped, sample);
             }
 
@@ -193,10 +193,11 @@ public class TradeSaga {
                         bar,
                         levels,
                         TradeSkipped.STAGE_RISK_BLOCKED,
-                        List.of("risk_state:" + riskService
-                                .snapshot(tenantId)
-                                .map(s -> s.state().name())
-                                .orElse("UNINITIALIZED")),
+                        List.of("risk_state:"
+                                + riskService
+                                        .snapshot(tenantId)
+                                        .map(s -> s.state().name())
+                                        .orElse("UNINITIALIZED")),
                         correlationId);
                 return finishSkipped(skipped, sample);
             }
@@ -211,11 +212,7 @@ public class TradeSaga {
                     bar.symbol(), bar.close(), eval.optionSide().orElseThrow(), sessionDate);
             if (selectionResult instanceof StrikeSelectionResult.NoCandidates noCandidates) {
                 TradeSkipped skipped = buildSkipped(
-                        bar,
-                        levels,
-                        TradeSkipped.STAGE_NO_STRIKE,
-                        List.of(noCandidates.reasonCode()),
-                        correlationId);
+                        bar, levels, TradeSkipped.STAGE_NO_STRIKE, List.of(noCandidates.reasonCode()), correlationId);
                 return finishSkipped(skipped, sample);
             }
             StrikeSelection selection = ((StrikeSelectionResult.Selected) selectionResult).selection();
@@ -310,12 +307,10 @@ public class TradeSaga {
     private Result finishSkipped(TradeSkipped skipped, Timer.Sample sample) {
         skippedEvent.fire(skipped);
         meterRegistry
-                .counter(
-                        "decision.saga.evaluations.total",
-                        Tags.of("outcome", "SKIPPED", "stage", skipped.stage()))
+                .counter("decision.saga.evaluations.total", Tags.of("outcome", "SKIPPED", "stage", skipped.stage()))
                 .increment();
-        sample.stop(meterRegistry.timer(
-                "decision.saga.duration", Tags.of("outcome", "SKIPPED", "stage", skipped.stage())));
+        sample.stop(
+                meterRegistry.timer("decision.saga.duration", Tags.of("outcome", "SKIPPED", "stage", skipped.stage())));
         if (LOG.isDebugEnabled()) {
             LOG.debug(
                     "trade-saga skipped tenant={} stage={} correlationId={} reasons={}",
