@@ -25,8 +25,7 @@ class StrikeSelectorTest {
     private final StrikeSelector selector = newSelector();
 
     private static StrikeSelector newSelector() {
-        return new StrikeSelector(
-                new BigDecimal("10.0"), new BigDecimal("0.10"), 100, new BigDecimal("2.0"));
+        return new StrikeSelector(new BigDecimal("10.0"), new BigDecimal("0.10"), 100, new BigDecimal("2.0"));
     }
 
     @Test
@@ -122,7 +121,10 @@ class StrikeSelectorTest {
         StrikeSelectionResult result = selector.select(SPOT, OptionSide.CALL, List.of(closer, tighter), TODAY);
 
         assertThat(result).isInstanceOf(StrikeSelectionResult.Selected.class);
-        assertThat(((StrikeSelectionResult.Selected) result).selection().chosen().strike())
+        assertThat(((StrikeSelectionResult.Selected) result)
+                        .selection()
+                        .chosen()
+                        .strike())
                 .isEqualByComparingTo(new BigDecimal("600"));
     }
 
@@ -135,7 +137,9 @@ class StrikeSelectorTest {
         assertThat(result).isInstanceOf(StrikeSelectionResult.Selected.class);
         StrikeSelectionResult.Selected selected = (StrikeSelectionResult.Selected) result;
         assertThat(selected.selection().chosen().symbol()).isEqualTo(chosen.symbol());
-        assertThat(selected.selection().rejected()).extracting(OptionContract::symbol).contains(bench.symbol());
+        assertThat(selected.selection().rejected())
+                .extracting(OptionContract::symbol)
+                .contains(bench.symbol());
         assertThat(selected.selection().reason()).contains("atm_band_distance=").contains("spread_pct=");
     }
 
@@ -145,7 +149,11 @@ class StrikeSelectorTest {
         StrikeSelectionResult result = selector.select(SPOT, OptionSide.PUT, List.of(p), TODAY);
 
         assertThat(result).isInstanceOf(StrikeSelectionResult.Selected.class);
-        assertThat(((StrikeSelectionResult.Selected) result).selection().chosen().side()).isEqualTo(OptionSide.PUT);
+        assertThat(((StrikeSelectionResult.Selected) result)
+                        .selection()
+                        .chosen()
+                        .side())
+                .isEqualTo(OptionSide.PUT);
     }
 
     // -- builders --

@@ -52,7 +52,6 @@ class OccSymbolParserTest {
 
     @Test
     void rejectsNullSymbol() {
-        assertThatThrownBy(() -> OccSymbolParser.parse(null))
-                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> OccSymbolParser.parse(null)).isInstanceOf(NullPointerException.class);
     }
 }

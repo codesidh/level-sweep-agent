@@ -51,8 +51,7 @@ public final class OccSymbolParser {
         int year = 2000 + Integer.parseInt(m.group("yy"));
         int month = Integer.parseInt(m.group("mm"));
         int day = Integer.parseInt(m.group("dd"));
-        LocalDate expiry = LocalDate.parse(
-                String.format("%04d%02d%02d", year, month, day), YYMMDD);
+        LocalDate expiry = LocalDate.parse(String.format("%04d%02d%02d", year, month, day), YYMMDD);
         OptionSide side = m.group("cp").equals("C") ? OptionSide.CALL : OptionSide.PUT;
         // Strike is integer × 1000; 1000 has only 2/5 prime factors, so the
         // division is exact at scale 3. Pin the scale explicitly so the

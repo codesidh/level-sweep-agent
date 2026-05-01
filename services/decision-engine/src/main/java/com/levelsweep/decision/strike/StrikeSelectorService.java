@@ -33,8 +33,7 @@ public class StrikeSelectorService {
      * Returns the sealed selector result; the caller is responsible for
      * surfacing {@code NoCandidates} as a "no_trade_today" decision.
      */
-    public StrikeSelectionResult selectFor(
-            String underlying, BigDecimal spot, OptionSide side, LocalDate today) {
+    public StrikeSelectionResult selectFor(String underlying, BigDecimal spot, OptionSide side, LocalDate today) {
         Objects.requireNonNull(underlying, "underlying");
         Objects.requireNonNull(spot, "spot");
         Objects.requireNonNull(side, "side");

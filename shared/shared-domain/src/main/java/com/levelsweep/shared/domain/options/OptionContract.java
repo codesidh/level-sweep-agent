@@ -71,8 +71,7 @@ public record OptionContract(
             throw new IllegalArgumentException("askPrice must be non-negative: " + askPrice);
         }
         if (askPrice.compareTo(bidPrice) < 0) {
-            throw new IllegalArgumentException(
-                    "askPrice must be >= bidPrice: bid=" + bidPrice + " ask=" + askPrice);
+            throw new IllegalArgumentException("askPrice must be >= bidPrice: bid=" + bidPrice + " ask=" + askPrice);
         }
     }
 

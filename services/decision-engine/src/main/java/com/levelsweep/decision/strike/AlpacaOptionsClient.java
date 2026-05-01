@@ -3,7 +3,6 @@ package com.levelsweep.decision.strike;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.levelsweep.shared.domain.options.OptionContract;
-import com.levelsweep.shared.domain.options.OptionSide;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.io.IOException;
@@ -108,9 +107,7 @@ public class AlpacaOptionsClient {
      */
     public List<OptionContract> fetchChain(String underlying) {
         Objects.requireNonNull(underlying, "underlying");
-        String url = baseUrl
-                + "/v1beta1/options/snapshots/"
-                + URLEncoder.encode(underlying, StandardCharsets.UTF_8);
+        String url = baseUrl + "/v1beta1/options/snapshots/" + URLEncoder.encode(underlying, StandardCharsets.UTF_8);
 
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -201,7 +198,9 @@ public class AlpacaOptionsClient {
 
         Optional<Integer> openInterest = optionalInt(snap.get("openInterest"));
         Optional<Integer> volume = optionalInt(
-                snap.has("dailyBar") && snap.get("dailyBar").isObject() ? snap.get("dailyBar").get("v") : null);
+                snap.has("dailyBar") && snap.get("dailyBar").isObject()
+                        ? snap.get("dailyBar").get("v")
+                        : null);
         Optional<BigDecimal> iv = optionalBigDecimal(snap.get("impliedVolatility"));
         Optional<BigDecimal> delta = Optional.empty();
         JsonNode greeks = snap.get("greeks");

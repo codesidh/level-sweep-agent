@@ -61,9 +61,11 @@ public class StrikeSelector {
     @Inject
     public StrikeSelector(
             @ConfigProperty(name = "decision.strike.max-spread-pct", defaultValue = "10.0") BigDecimal maxSpreadPct,
-            @ConfigProperty(name = "decision.strike.max-spread-abs", defaultValue = "0.10") BigDecimal maxSpreadAbsDollars,
+            @ConfigProperty(name = "decision.strike.max-spread-abs", defaultValue = "0.10")
+                    BigDecimal maxSpreadAbsDollars,
             @ConfigProperty(name = "decision.strike.min-open-interest", defaultValue = "100") int minOpenInterest,
-            @ConfigProperty(name = "decision.strike.atm-band-dollars", defaultValue = "2.0") BigDecimal atmBandDollars) {
+            @ConfigProperty(name = "decision.strike.atm-band-dollars", defaultValue = "2.0")
+                    BigDecimal atmBandDollars) {
         this.maxSpreadPct = Objects.requireNonNull(maxSpreadPct, "maxSpreadPct");
         this.maxSpreadAbsDollars = Objects.requireNonNull(maxSpreadAbsDollars, "maxSpreadAbsDollars");
         this.minOpenInterest = minOpenInterest;
@@ -75,8 +77,7 @@ public class StrikeSelector {
      * {@code side}. Returns a sealed result; never {@code null}, never throws
      * on legitimate empty/illiquid inputs.
      */
-    public StrikeSelectionResult select(
-            BigDecimal spot, OptionSide side, List<OptionContract> chain, LocalDate today) {
+    public StrikeSelectionResult select(BigDecimal spot, OptionSide side, List<OptionContract> chain, LocalDate today) {
         Objects.requireNonNull(spot, "spot");
         Objects.requireNonNull(side, "side");
         Objects.requireNonNull(chain, "chain");
@@ -110,9 +111,7 @@ public class StrikeSelector {
             }
         }
         if (survivors.isEmpty()) {
-            LOG.debug(
-                    "no strike passed liquidity: spot={} side={} considered={}",
-                    spot, side, banded.size());
+            LOG.debug("no strike passed liquidity: spot={} side={} considered={}", spot, side, banded.size());
             return new StrikeSelectionResult.NoCandidates("no_strike_passed_liquidity");
         }
 

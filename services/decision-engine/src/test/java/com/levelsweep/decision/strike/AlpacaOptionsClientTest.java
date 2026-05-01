@@ -101,8 +101,7 @@ class AlpacaOptionsClientTest {
         AlpacaOptionsClient.Fetcher fetcher = req -> {
             throw new IOException("network down");
         };
-        AlpacaOptionsClient client =
-                new AlpacaOptionsClient(BASE_URL, "AKtest", "SKtest", new ObjectMapper(), fetcher);
+        AlpacaOptionsClient client = new AlpacaOptionsClient(BASE_URL, "AKtest", "SKtest", new ObjectMapper(), fetcher);
 
         assertThat(client.fetchChain("SPY")).isEmpty();
     }
