@@ -29,6 +29,6 @@ output "subnet_bastion_id" {
 }
 
 output "nat_egress_ip" {
-  description = "Static public egress IP — register with Alpaca / Anthropic / Trading Economics allowlists."
-  value       = azurerm_public_ip.nat.ip_address
+  description = "Static public egress IP when the NAT Gateway is enabled — register with partner allowlists. Null when egress flows through the AKS load-balancer (Phase 1 dev default)."
+  value       = var.enable_nat_gateway ? azurerm_public_ip.nat[0].ip_address : null
 }

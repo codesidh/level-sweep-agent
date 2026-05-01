@@ -51,7 +51,12 @@ resource "azurerm_subnet" "bastion" {
   address_prefixes     = ["10.42.4.32/27"]
 }
 
+# NAT Gateway is optional. Phase 1 dev runs without one to save ~$35/mo —
+# Alpaca / Anthropic / Trading Economics don't require IP allowlisting at
+# the tier we use, so AKS load-balancer SNAT (free) is sufficient. Phase 7
+# enables NAT when a deterministic egress IP becomes a requirement.
 resource "azurerm_public_ip" "nat" {
+  count               = var.enable_nat_gateway ? 1 : 0
   name                = "pip-${var.project}-${var.environment}-nat"
   location            = azurerm_resource_group.net.location
   resource_group_name = azurerm_resource_group.net.name
@@ -61,6 +66,7 @@ resource "azurerm_public_ip" "nat" {
 }
 
 resource "azurerm_nat_gateway" "main" {
+  count               = var.enable_nat_gateway ? 1 : 0
   name                = "ng-${var.project}-${var.environment}"
   location            = azurerm_resource_group.net.location
   resource_group_name = azurerm_resource_group.net.name
@@ -69,11 +75,13 @@ resource "azurerm_nat_gateway" "main" {
 }
 
 resource "azurerm_nat_gateway_public_ip_association" "main" {
-  nat_gateway_id       = azurerm_nat_gateway.main.id
-  public_ip_address_id = azurerm_public_ip.nat.id
+  count                = var.enable_nat_gateway ? 1 : 0
+  nat_gateway_id       = azurerm_nat_gateway.main[0].id
+  public_ip_address_id = azurerm_public_ip.nat[0].id
 }
 
 resource "azurerm_subnet_nat_gateway_association" "aks" {
+  count          = var.enable_nat_gateway ? 1 : 0
   subnet_id      = azurerm_subnet.aks.id
-  nat_gateway_id = azurerm_nat_gateway.main.id
+  nat_gateway_id = azurerm_nat_gateway.main[0].id
 }

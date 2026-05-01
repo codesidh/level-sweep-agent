@@ -97,8 +97,14 @@ module "aks" {
   log_analytics_workspace_id = module.observability.log_analytics_workspace_id
   acr_id                     = module.registry.acr_id
 
-  # Force creation order: NAT must be associated to the subnet BEFORE AKS
-  # spins up, otherwise outbound_type = userAssignedNATGateway fails.
+  # Phase 1 dev cost-tuned defaults — see `architecture-spec.md` §16 cost table.
+  # Production (Phase 7) overrides these in `infra/environments/prod/main.tf`
+  # for HA + sustained throughput.
+  node_count          = 1
+  vm_size             = "Standard_B2ms"
+  enable_azure_policy = false
+  outbound_type       = "loadBalancer"
+
   depends_on = [module.networking]
 }
 
