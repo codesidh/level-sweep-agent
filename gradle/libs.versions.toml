@@ -120,6 +120,7 @@ quarkus-junit5                    = { module = "io.quarkus:quarkus-junit5" }
 quarkus-rest-assured              = { module = "io.rest-assured:rest-assured", version.ref = "restAssured" }
 quarkus-kafka-client              = { module = "io.quarkus:quarkus-kafka-client" }
 quarkus-messaging-kafka           = { module = "io.quarkus:quarkus-messaging-kafka" }
+smallrye-messaging-inmemory       = { module = "io.smallrye.reactive:smallrye-reactive-messaging-in-memory" }
 quarkus-mongodb-client            = { module = "io.quarkus:quarkus-mongodb-client" }
 quarkus-jdbc-mssql                = { module = "io.quarkus:quarkus-jdbc-mssql" }
 quarkus-agroal                    = { module = "io.quarkus:quarkus-agroal" }

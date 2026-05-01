@@ -150,6 +150,22 @@ tenant:
     mongodb:
       health:
         enabled: false
+  # Phase 1 dev does not run Kafka — Strimzi cluster lands in Phase 6 per
+  # architecture-spec §12. Until then, the bar emitter routes to in-memory
+  # channels so producer construction doesn't fail at boot. Bars then go
+  # nowhere in dev, which is correct: the Phase 2 Decision Engine consumer
+  # doesn't exist yet, so the messaging path is dormant by design.
+  mp:
+    messaging:
+      outgoing:
+        bars-1m:
+          connector: smallrye-in-memory
+        bars-2m:
+          connector: smallrye-in-memory
+        bars-15m:
+          connector: smallrye-in-memory
+        bars-daily:
+          connector: smallrye-in-memory
 
 # Test profile — Quarkus dev-services would otherwise try to spin up Mongo
 # and MS SQL containers in CI. Disable them here so unit tests run without
