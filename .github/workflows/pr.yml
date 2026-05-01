@@ -2,16 +2,24 @@
 # PR pipeline — runs on every pull request.
 # Per architecture-spec §19.1: lint, build, unit tests, terraform plan/validate.
 # Container scan + integration tests run on `main.yml`.
+#
+# Per-job gating via dorny/paths-filter so a docs-only or skill-only PR runs
+# zero heavy jobs. Each job's `if:` checks the paths-filter output for the
+# relevant area. Paths the filter doesn't claim (skills, references, idea)
+# fall through to no jobs running, which is the desired outcome.
 # =============================================================================
 name: pr
 
 on:
   pull_request:
     branches: [main]
+    # Top-level paths-ignore is intentionally minimal — most filtering happens
+    # per-job below. Anything matched here causes the workflow to not even
+    # start, which is the right behavior for files no job touches.
     paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - "adr/**"
+      - ".claude/**"
+      - "references/**"
+      - "docs/idea/**"
 
 permissions:
   contents: write       # auto-commit Spotless fixes back to PR branch
@@ -25,10 +33,47 @@ concurrency:
 jobs:
 
   # ---------------------------------------------------------------------------
-  # Java / Gradle build + spotless + unit tests
+  # Compute changed paths once, gate every other job on the result.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: detect-changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      jvm:       ${{ steps.filter.outputs.jvm }}
+      terraform: ${{ steps.filter.outputs.terraform }}
+      helm:      ${{ steps.filter.outputs.helm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            jvm:
+              - 'services/**'
+              - 'shared/**'
+              - 'gradle/**'
+              - 'gradlew'
+              - 'gradlew.bat'
+              - '**/*.gradle.kts'
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - '.github/workflows/pr.yml'
+            terraform:
+              - 'infra/**'
+              - '.github/workflows/pr.yml'
+            helm:
+              - 'deploy/helm/**'
+              - '.github/workflows/pr.yml'
+
+  # ---------------------------------------------------------------------------
+  # Java / Gradle build + spotless + unit tests. Skipped when no JVM-relevant
+  # paths changed.
   # ---------------------------------------------------------------------------
   jvm:
     name: jvm-build
+    needs: changes
+    if: needs.changes.outputs.jvm == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -98,10 +143,13 @@ jobs:
             **/build/test-results/**
 
   # ---------------------------------------------------------------------------
-  # Terraform formatting + validation (no plan; that runs on iac.yml)
+  # Terraform formatting + validation (no plan; that runs on iac.yml). Skipped
+  # when no infra files changed.
   # ---------------------------------------------------------------------------
   terraform:
     name: terraform
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -143,10 +191,13 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Helm chart lint — catches templating bugs before deploy-dev.yml runs them
-  # against a real cluster. Cheap (~10s) so worth gating every PR.
+  # against a real cluster. Cheap (~10s) so worth gating every relevant PR.
+  # Skipped when no chart files changed.
   # ---------------------------------------------------------------------------
   helm:
     name: helm lint
+    needs: changes
+    if: needs.changes.outputs.helm == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -173,8 +224,11 @@ jobs:
             --set keyVault.name=kv-example \
             --set keyVault.vaultUri=https://kv-example.vault.azure.net/ \
             > /tmp/rendered.yaml
-          # Sanity-check the render produced the four expected kinds.
-          for kind in Deployment Service ServiceAccount SecretProviderClass NetworkPolicy PodDisruptionBudget; do
+          # Sanity-check the render produced the expected kinds. PDB is conditional —
+          # only present when deployment.strategy=RollingUpdate (Phase 7+); the
+          # default strategy=Recreate path skips it intentionally to avoid blocking
+          # voluntary evictions on a single-replica deployment.
+          for kind in Deployment Service ServiceAccount SecretProviderClass NetworkPolicy; do
             if ! grep -q "^kind: ${kind}$" /tmp/rendered.yaml; then
               echo "::error::helm template did not produce a ${kind} resource"
               exit 1

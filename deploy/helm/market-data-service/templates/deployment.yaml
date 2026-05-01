@@ -10,13 +10,20 @@ spec:
     matchLabels:
       {{- include "market-data-service.selectorLabels" . | nindent 6 }}
   strategy:
-    type: RollingUpdate
+    # Phase 1 dev: single-node, single-replica. RollingUpdate would create a
+    # second pod (maxSurge=1) before terminating the old one, but the single
+    # D2s_v4 node doesn't have the CPU headroom for two market-data-service
+    # pods at once, so the new pod stays Pending and Helm's `--wait` times
+    # out ("UPGRADE FAILED: context deadline exceeded"). Recreate kills the
+    # old pod first → ~10s downtime → no resource contention.
+    # Phase 7 production scales to 2+ nodes and switches back to RollingUpdate
+    # with maxSurge=1, maxUnavailable=0.
+    type: {{ .Values.deployment.strategy | default "Recreate" }}
+    {{- if eq (.Values.deployment.strategy | default "Recreate") "RollingUpdate" }}
     rollingUpdate:
-      # Phase 1 single replica — surge by one so a new pod is up before the
-      # old one terminates. PDB still enforces minAvailable: 1 against
-      # voluntary disruption.
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: {{ .Values.deployment.maxSurge | default 1 }}
+      maxUnavailable: {{ .Values.deployment.maxUnavailable | default 0 }}
+    {{- end }}
   template:
     metadata:
       labels:
