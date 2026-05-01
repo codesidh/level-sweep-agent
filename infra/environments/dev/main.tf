@@ -127,6 +127,31 @@ module "github_oidc" {
 }
 
 # -----------------------------------------------------------------------------
+# Workload identity for the market-data-service pod's KV CSI mount.
+# Phase 1 reuses the AKS kubelet managed identity as the workload identity —
+# the Helm chart sets `azure.workload.identity/client-id` on the SA to
+# `kubelet_client_id`. To make that work we need:
+#   1) a federated credential binding the kubelet MI to the SA's OIDC subject
+#   2) `Key Vault Secrets User` on the KV scoped to the kubelet MI
+# Phase 7 splits this into a dedicated per-service workload MI.
+# -----------------------------------------------------------------------------
+
+resource "azurerm_federated_identity_credential" "market_data_sa" {
+  name                = "fc-${var.project}-${local.environment}-market-data-service"
+  resource_group_name = module.aks.cluster_resource_group
+  parent_id           = module.aks.kubelet_user_assigned_identity_id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = module.aks.oidc_issuer_url
+  subject             = "system:serviceaccount:market-data:market-data-service"
+}
+
+resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
+  scope                = module.keyvault.kv_id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = module.aks.kubelet_object_id
+}
+
+# -----------------------------------------------------------------------------
 # Variables (root vars module are duplicated here so each env stands alone
 # under the iac.yml matrix).
 # -----------------------------------------------------------------------------

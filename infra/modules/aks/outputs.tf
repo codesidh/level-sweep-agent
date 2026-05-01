@@ -37,3 +37,8 @@ output "kubelet_client_id" {
   description = "Client ID of the kubelet managed identity — used by the Azure Key Vault CSI driver / workload-identity binding (Phase 1; Phase 7 introduces a dedicated workload MI per service)."
   value       = azurerm_kubernetes_cluster.main.kubelet_identity[0].client_id
 }
+
+output "kubelet_user_assigned_identity_id" {
+  description = "Resource ID of the kubelet user-assigned managed identity — required as `parent_id` when creating federated identity credentials that bind a Kubernetes ServiceAccount to this MI."
+  value       = azurerm_kubernetes_cluster.main.kubelet_identity[0].user_assigned_identity_id
+}
