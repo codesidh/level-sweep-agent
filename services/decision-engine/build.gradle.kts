@@ -18,7 +18,17 @@ dependencies {
     implementation(libs.quarkus.smallrye.health)
     implementation(libs.quarkus.micrometer.prometheus)
     implementation(libs.quarkus.opentelemetry)
+    // quarkus-kafka-client stays in place — leaves room for low-level admin/clients
+    // (e.g., manual AdminClient calls or Streams in a later phase). The reactive
+    // messaging extension below is the primary @Incoming consumer pathway.
     implementation(libs.quarkus.kafka.client)
+    implementation(libs.quarkus.messaging.kafka)
+    // Phase 2 dev cluster has no Kafka — the %prod profile routes the four bars-*
+    // incoming channels to the in-memory connector so consumer construction does
+    // not crash on broker DNS at boot. Same pattern as market-data-service.
+    // Phase 6 Strimzi rollout can drop this dep when the in-memory fallback is
+    // no longer used.
+    implementation(libs.smallrye.messaging.inmemory)
     implementation(libs.quarkus.mongodb.client)
     implementation(libs.quarkus.jdbc.mssql)
     implementation(libs.quarkus.smallrye.fault.tolerance)
