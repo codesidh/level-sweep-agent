@@ -81,9 +81,12 @@ public class AlpacaOptionsClient {
     public AlpacaOptionsClient(
             @ConfigProperty(name = "decision.strike.alpaca-options-url", defaultValue = "https://data.alpaca.markets")
                     String baseUrl,
-            @ConfigProperty(name = "alpaca.api-key", defaultValue = "") String apiKey,
-            @ConfigProperty(name = "alpaca.secret-key", defaultValue = "") String secretKey) {
-        this(baseUrl, apiKey, secretKey, new ObjectMapper(), defaultFetcher());
+            // Optional<String> — Quarkus treats `defaultValue = ""` as "no default", which fails the
+            // `%test` profile boot when alpaca.api-key/secret-key aren't set. Optional<> is the
+            // canonical "may-be-absent" pattern; we coerce empty to "" inside the canonical ctor.
+            @ConfigProperty(name = "alpaca.api-key") java.util.Optional<String> apiKey,
+            @ConfigProperty(name = "alpaca.secret-key") java.util.Optional<String> secretKey) {
+        this(baseUrl, apiKey.orElse(""), secretKey.orElse(""), new ObjectMapper(), defaultFetcher());
     }
 
     /** Test seam: inject a {@link Fetcher} returning canned JSON. */
