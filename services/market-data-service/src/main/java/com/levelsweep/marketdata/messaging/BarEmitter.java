@@ -2,6 +2,7 @@ package com.levelsweep.marketdata.messaging;
 
 import com.levelsweep.shared.domain.marketdata.Bar;
 import com.levelsweep.shared.domain.marketdata.Timeframe;
+import io.quarkus.arc.profile.UnlessBuildProfile;
 import io.smallrye.reactive.messaging.MutinyEmitter;
 import io.smallrye.reactive.messaging.kafka.Record;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -23,6 +24,13 @@ import org.slf4j.LoggerFactory;
  *   <li>{@code market.bars.daily} — {@link Timeframe#DAILY}
  * </ul>
  *
+ * <p>This bean is intentionally <strong>disabled in the {@code prod} profile</strong>
+ * during Phase 1 — the dev cluster does not run Kafka (Strimzi lands in Phase 6
+ * per architecture-spec §12). Without the gate, Quarkus eagerly constructs the
+ * Kafka producer at boot and crashes on DNS resolution of the placeholder
+ * {@code kafka:9092}. The gate becomes a no-op in Phase 6 when Kafka is real;
+ * remove the {@link UnlessBuildProfile} at that point.
+ *
  * <p>The actual topic name is configured per-channel in {@code application.yml}; this
  * class only routes by timeframe to the correct channel.
  *
@@ -37,6 +45,7 @@ import org.slf4j.LoggerFactory;
  * {@code daily_state} directly and consumes indicator snapshots in-process.
  */
 @ApplicationScoped
+@UnlessBuildProfile("prod")
 public class BarEmitter {
 
     private static final Logger LOG = LoggerFactory.getLogger(BarEmitter.class);
