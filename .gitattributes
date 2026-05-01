@@ -1,0 +1,4 @@
+docs/idea/*.MOV filter=lfs diff=lfs merge=lfs -text
+docs/idea/*.mov filter=lfs diff=lfs merge=lfs -text
+docs/idea/*.MP4 filter=lfs diff=lfs merge=lfs -text
+docs/idea/*.mp4 filter=lfs diff=lfs merge=lfs -text
