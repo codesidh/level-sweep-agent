@@ -56,6 +56,19 @@ resource "azurerm_federated_identity_credential" "tag" {
   subject             = "repo:${var.github_org}/${var.github_repo}:ref:refs/tags/*"
 }
 
+# Workflows that pin themselves to a GitHub Environment (`environment: dev`)
+# produce OIDC tokens with subject `repo:.../environment:dev`, regardless of
+# the source ref. The deploy-dev and bootstrap-kv-secrets workflows both
+# rely on this — they run in the dev environment for protected-secret access.
+resource "azurerm_federated_identity_credential" "env_dev" {
+  name                = "gha-env-dev"
+  resource_group_name = azurerm_resource_group.gha.name
+  parent_id           = azurerm_user_assigned_identity.gha.id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = "https://token.actions.githubusercontent.com"
+  subject             = "repo:${var.github_org}/${var.github_repo}:environment:dev"
+}
+
 # -----------------------------------------------------------------------------
 # Role assignments. Scoped narrowly: Contributor on the AKS RG only (not the
 # whole subscription), AcrPush on the ACR resource, and Key Vault Secrets
