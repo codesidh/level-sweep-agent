@@ -37,9 +37,10 @@ quarkus:
   smallrye-health:
     root-path: /q/health
 
-  # MS SQL datasource (architecture-spec §13.1). Phase 2 Step 1 does not yet
-  # touch trades / risk_events tables — those land in Step 3 with the Trade
-  # Saga. Health is disabled so a transient DB outage does not flap liveness.
+  # MS SQL datasource (architecture-spec §13.1). Phase 2 Step 3 introduces
+  # risk_events + trades tables and extends daily_state with the Risk FSM
+  # columns. Health is disabled so a transient DB outage does not flap
+  # liveness — readiness is FSM-driven.
   datasource:
     db-kind: mssql
     username: "${MSSQL_USER:sa}"
@@ -48,6 +49,14 @@ quarkus:
       url: "${MSSQL_URL:jdbc:sqlserver://localhost:1433;databaseName=level_sweep;encrypt=false}"
     health:
       enabled: false
+  # Decision-engine Flyway scripts live under db/migration/ with V100+ prefixes
+  # so they don't collide with market-data-service's V001+ on a shared MS SQL
+  # database (Flyway tracks the union in flyway_schema_history). Disabled in
+  # %prod because Phase 2 dev does not deploy MS SQL — Azure SQL lands in
+  # Phase 7 per architecture-spec §13.1.
+  flyway:
+    migrate-at-start: true
+    locations: classpath:db/migration
 
   # MongoDB driver (architecture-spec §13.2). Decision Engine reads bar history
   # in Phase 2 Step 2+; in Step 1 we only consume the live bar topic. Health
@@ -121,6 +130,12 @@ levelsweep:
     # Phase B flags — see docs/feature-flags.md. ALL OFF.
     phase-b-multi-tenant-onboarding: false
     phase-b-alpaca-oauth: false
+  risk:
+    # Risk FSM thresholds (requirements.md §11). Read by RiskFsmFactory.
+    # max-trades-per-day caps operator-discipline halts (§16); budget-low-fraction
+    # is the warn threshold expressed as a fraction of dailyLossBudget.
+    max-trades-per-day: 5
+    budget-low-fraction: "0.70"
 
 tenant:
   id: "${TENANT_ID:OWNER}"
@@ -145,6 +160,13 @@ tenant:
     datasource:
       health:
         enabled: false
+    # Flyway off in %prod for the same reason as market-data-service — Phase 2
+    # dev does not deploy MS SQL, so migrate-at-start would block boot trying
+    # to reach a nonexistent jdbc URL. Repository writes already catch SQL
+    # exceptions and log a WARN, so an absent DB is graceful in dev.
+    flyway:
+      migrate-at-start: false
+      enabled: false
     mongodb:
       health:
         enabled: false
@@ -169,6 +191,8 @@ tenant:
 "%test":
   quarkus:
     scheduler:
+      enabled: false
+    flyway:
       enabled: false
     datasource:
       devservices:
