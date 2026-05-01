@@ -33,6 +33,9 @@ public class DecisionEngineReadinessCheck implements HealthCheck {
 
     @Override
     public HealthCheckResponse call() {
-        return HealthCheckResponse.named(NAME).up().withData("mode", "ingest-only").build();
+        return HealthCheckResponse.named(NAME)
+                .up()
+                .withData("mode", "ingest-only")
+                .build();
     }
 }
