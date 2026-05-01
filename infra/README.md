@@ -69,25 +69,36 @@ This is a one-time, operator-run flow. CI does not apply — only validates.
    Optional environment **variable** (not a secret):
    - `AZURE_REGION` — defaults to `eastus` if unset; controls the App Insights
      ingest endpoint OTel exporters use.
-8. Add the egress IP to external service allowlists:
-   ```bash
-   terraform output -raw nat_egress_ip
-   ```
-   Register on:
-   - Alpaca dashboard: https://alpaca.markets/dashboard (API key IP allowlist)
-   - Trading Economics: https://tradingeconomics.com/api (account → security)
-   - Anthropic does not require IP allowlisting in standard plans.
+8. Egress IP allowlisting — Phase 1 dev runs without a NAT Gateway (`nat_egress_ip` returns `null`), so AKS egress comes from the cluster's load balancer SNAT pool. None of Alpaca / Anthropic / Trading Economics require allowlisting at the tier we use, so this is fine for the soak. If a partner upgrade ever requires a deterministic egress IP, follow the NAT-enable steps in the cost section above.
 
-## What gets provisioned (dev)
+## What gets provisioned (dev — cost-tuned)
 
-| Resource group                       | Contents                                                |
-| ------------------------------------ | ------------------------------------------------------- |
-| `rg-levelsweep-dev-net`              | VNET (10.42.0.0/16), 3 subnets, NAT Gateway, public IP  |
-| `rg-levelsweep-dev-acr`              | ACR (Basic SKU, admin disabled)                         |
-| `rg-levelsweep-dev-obs`              | Log Analytics workspace (PerGB2018, 30d), App Insights  |
-| `rg-levelsweep-dev-kv`               | Key Vault (RBAC, soft-delete, 4 placeholder secrets)    |
-| `rg-levelsweep-dev-aks`              | AKS cluster (1.30, 2x D4s_v5, OIDC + workload identity) |
-| `rg-levelsweep-dev-gha`              | User-assigned MI + 3 federated creds + scoped roles     |
+| Resource group                       | Contents                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------- |
+| `rg-levelsweep-dev-net`              | VNET (10.42.0.0/16), 3 subnets. NAT Gateway disabled by default in dev.   |
+| `rg-levelsweep-dev-acr`              | ACR (Basic SKU, admin disabled)                                           |
+| `rg-levelsweep-dev-obs`              | Log Analytics workspace (PerGB2018, 30d), App Insights                    |
+| `rg-levelsweep-dev-kv`               | Key Vault (RBAC, soft-delete, 4 placeholder secrets)                      |
+| `rg-levelsweep-dev-aks`              | AKS cluster (1.30, 1× Standard_B2ms, OIDC + workload identity, LB egress) |
+| `rg-levelsweep-dev-gha`              | User-assigned MI + 3 federated creds + scoped roles                       |
+
+### Estimated monthly cost (Phase 1 dev)
+
+~$75–85 / month, dominated by:
+- AKS Free tier control plane: $0
+- 1× Standard_B2ms node (2 vCPU burstable, 8 GB): ~$60
+- ACR Basic: ~$5
+- Log Analytics + App Insights at light ingest: ~$10–20
+
+Phase 7 production overrides bump this for HA + sustained throughput. The
+cost-tuned values are set in `environments/dev/main.tf` (`node_count`,
+`vm_size`, `enable_azure_policy`, `outbound_type`); each is a module variable
+so prod can opt into the heavier config.
+
+If a partner ever requires a deterministic egress IP (Alpaca enterprise,
+Trading Economics paid tier, etc.), enable the NAT Gateway by setting
+`enable_nat_gateway = true` on the `networking` module and switching the AKS
+`outbound_type` to `userAssignedNATGateway` — adds ~$35/mo.
 
 ## What's deferred to Phase 7
 

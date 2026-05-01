@@ -22,8 +22,8 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   default_node_pool {
     name           = "system"
-    node_count     = 2
-    vm_size        = "Standard_D4s_v5"
+    node_count     = var.node_count
+    vm_size        = var.vm_size
     vnet_subnet_id = var.subnet_aks_id
 
     # Phase 1 dev: keep system pool open for workloads to avoid the cost of
@@ -39,16 +39,17 @@ resource "azurerm_kubernetes_cluster" "main" {
   oidc_issuer_enabled       = true
   workload_identity_enabled = true
 
-  azure_policy_enabled = true
+  azure_policy_enabled = var.enable_azure_policy
 
   network_profile {
     network_plugin = "azure"
     network_policy = "azure"
     service_cidr   = "10.43.0.0/16"
     dns_service_ip = "10.43.0.10"
-    # Egress traffic exits through the user-assigned NAT Gateway provisioned
-    # by the networking module — gives a deterministic IP for Alpaca etc.
-    outbound_type = "userAssignedNATGateway"
+    # Egress strategy is configurable. Phase 1 dev defaults to load-balancer
+    # SNAT (free); Phase 7 production switches to userAssignedNATGateway when
+    # a deterministic egress IP is required for partner allowlists.
+    outbound_type = var.outbound_type
   }
 
   oms_agent {
