@@ -6,7 +6,7 @@ import com.levelsweep.shared.domain.indicators.IndicatorSnapshot;
 import com.levelsweep.shared.domain.marketdata.Bar;
 import com.levelsweep.shared.domain.marketdata.Levels;
 import com.levelsweep.shared.domain.marketdata.Timeframe;
-import com.levelsweep.shared.domain.signal.OptionSide;
+import com.levelsweep.shared.domain.options.OptionSide;
 import com.levelsweep.shared.domain.signal.SignalAction;
 import com.levelsweep.shared.domain.signal.SignalEvaluation;
 import com.levelsweep.shared.domain.signal.SweptLevel;
