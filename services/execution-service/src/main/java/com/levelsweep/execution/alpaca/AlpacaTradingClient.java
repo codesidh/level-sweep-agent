@@ -83,8 +83,7 @@ public class AlpacaTradingClient {
 
     @Inject
     public AlpacaTradingClient(
-            @ConfigProperty(name = "alpaca.base-url", defaultValue = "https://paper-api.alpaca.markets")
-                    String baseUrl,
+            @ConfigProperty(name = "alpaca.base-url", defaultValue = "https://paper-api.alpaca.markets") String baseUrl,
             @ConfigProperty(name = "alpaca.api-key") Optional<String> apiKey,
             @ConfigProperty(name = "alpaca.secret-key") Optional<String> secretKey,
             Clock clock) {
@@ -222,8 +221,7 @@ public class AlpacaTradingClient {
                     "alpaca trading client 2xx response missing id clientOrderId={} body={}",
                     req.clientOrderId(),
                     truncate(body, 256));
-            return new OrderSubmission.FailedWithError(
-                    req.clientOrderId(), "2xx response missing 'id' field");
+            return new OrderSubmission.FailedWithError(req.clientOrderId(), "2xx response missing 'id' field");
         }
         String alpacaOrderId = idNode.asText();
         String status = statusNode != null && !statusNode.isNull() ? statusNode.asText("accepted") : "accepted";
@@ -243,8 +241,7 @@ public class AlpacaTradingClient {
         body.put("side", req.side());
         body.put("type", req.type());
         body.put("time_in_force", req.timeInForce());
-        req.limitPrice()
-                .ifPresent(p -> body.put("limit_price", p.toPlainString()));
+        req.limitPrice().ifPresent(p -> body.put("limit_price", p.toPlainString()));
         body.put("client_order_id", req.clientOrderId());
         return body;
     }

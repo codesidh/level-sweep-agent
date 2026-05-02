@@ -53,11 +53,12 @@ public final class OrderPricing {
         // on tight spreads (e.g., 1.20/1.21 → mid 1.205).
         BigDecimal mid = bid.add(ask).divide(TWO, 4, RoundingMode.HALF_UP);
 
-        BigDecimal raw = switch (side) {
-            case OrderRequest.SIDE_BUY -> mid.add(PENNY);
-            case OrderRequest.SIDE_SELL -> mid.subtract(PENNY);
-            default -> throw new IllegalArgumentException("unknown side: " + side);
-        };
+        BigDecimal raw =
+                switch (side) {
+                    case OrderRequest.SIDE_BUY -> mid.add(PENNY);
+                    case OrderRequest.SIDE_SELL -> mid.subtract(PENNY);
+                    default -> throw new IllegalArgumentException("unknown side: " + side);
+                };
 
         BigDecimal rounded = raw.setScale(2, RoundingMode.HALF_UP);
         // Defensive floor — a SELL on a near-zero quote could go negative.

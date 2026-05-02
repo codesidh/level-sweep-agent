@@ -145,8 +145,8 @@ public class OrderPlacingTradeRouter implements TradeRouter {
      * without going through the Alpaca client stub.
      */
     OrderRequest buildRequest(TradeProposed event) {
-        BigDecimal limit = OrderPricing.limitPriceFromNbbo(
-                event.entryNbboBid(), event.entryNbboAsk(), OrderRequest.SIDE_BUY);
+        BigDecimal limit =
+                OrderPricing.limitPriceFromNbbo(event.entryNbboBid(), event.entryNbboAsk(), OrderRequest.SIDE_BUY);
         return new OrderRequest(
                 event.tenantId(),
                 event.tradeId(),

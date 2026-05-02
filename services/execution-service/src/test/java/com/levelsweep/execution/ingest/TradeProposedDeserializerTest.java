@@ -73,14 +73,10 @@ class TradeProposedDeserializerTest {
             assertThat(decoded.entryNbboBid()).isEqualByComparingTo("1.20");
             assertThat(decoded.entryNbboAsk()).isEqualByComparingTo("1.25");
             assertThat(decoded.entryMid()).isEqualByComparingTo("1.225");
-            assertThat(decoded.impliedVolatility())
-                    .isPresent()
-                    .get()
-                    .satisfies(iv -> assertThat(iv).isEqualByComparingTo("0.18"));
-            assertThat(decoded.delta())
-                    .isPresent()
-                    .get()
-                    .satisfies(d -> assertThat(d).isEqualByComparingTo("0.50"));
+            assertThat(decoded.impliedVolatility()).isPresent().get().satisfies(iv -> assertThat(iv)
+                    .isEqualByComparingTo("0.18"));
+            assertThat(decoded.delta()).isPresent().get().satisfies(d -> assertThat(d)
+                    .isEqualByComparingTo("0.50"));
             assertThat(decoded.correlationId()).isEqualTo("corr-trade-abc");
             assertThat(decoded.signalReasons()).containsExactly("pdh_sweep", "ema_confluence");
         } finally {
@@ -150,8 +146,7 @@ class TradeProposedDeserializerTest {
         try {
             TradeProposed first = deserializer.deserialize("tenant.commands", wire);
             TradeProposed second = deserializer.deserialize(
-                    "tenant.commands",
-                    new String(wire, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8));
+                    "tenant.commands", new String(wire, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8));
 
             assertThat(second).isEqualTo(first);
         } finally {

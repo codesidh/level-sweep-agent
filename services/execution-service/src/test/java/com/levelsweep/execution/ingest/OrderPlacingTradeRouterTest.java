@@ -160,11 +160,11 @@ class OrderPlacingTradeRouterTest {
 
     @Test
     void rejectsConfiguredQuantityZeroOrNegative() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                        new OrderPlacingTradeRouter(client, FIXED_CLOCK, submittedEvent, rejectedEvent, 0))
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new OrderPlacingTradeRouter(client, FIXED_CLOCK, submittedEvent, rejectedEvent, 0))
                 .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                        new OrderPlacingTradeRouter(client, FIXED_CLOCK, submittedEvent, rejectedEvent, -1))
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new OrderPlacingTradeRouter(client, FIXED_CLOCK, submittedEvent, rejectedEvent, -1))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
