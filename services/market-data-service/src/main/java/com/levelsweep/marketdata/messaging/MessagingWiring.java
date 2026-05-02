@@ -10,14 +10,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * CDI startup observer that wires the Kafka {@link BarEmitter} onto the
- * {@link LivePipeline}'s bar fan-out, mirroring the pattern in
- * {@code com.levelsweep.marketdata.persistence.PersistenceWiring}.
+ * CDI startup observer that wires the Kafka {@link BarEmitter} and
+ * {@link IndicatorSnapshotEmitter} onto the {@link LivePipeline}'s fan-outs,
+ * mirroring the pattern in {@code com.levelsweep.marketdata.persistence.PersistenceWiring}.
  *
- * <p>Registered listener is fire-and-forget at the Kafka layer (see {@link BarEmitter}),
- * so a broker outage does not block the drainer thread. Per-listener exception
- * isolation lives inside {@code LivePipeline}'s fan-out, so a Kafka publish blowup
- * cannot kill bar delivery to the indicator engine or persistence sink.
+ * <p>Registered listeners are fire-and-forget at the Kafka layer (see {@link BarEmitter}
+ * / {@link IndicatorSnapshotEmitter}), so a broker outage does not block the drainer
+ * thread. Per-listener exception isolation lives inside {@code LivePipeline}'s fan-outs,
+ * so a Kafka publish blowup cannot kill bar delivery to the indicator engine or
+ * persistence sink, nor stall snapshot delivery to other subscribers.
  *
  * <p>Disabled in the {@code prod} profile during Phase 1 — same rationale as
  * {@link BarEmitter}: no Kafka cluster runs in dev until Phase 6.
@@ -30,11 +31,13 @@ public class MessagingWiring {
 
     private final LivePipeline pipeline;
     private final BarEmitter barEmitter;
+    private final IndicatorSnapshotEmitter snapshotEmitter;
 
     @Inject
-    public MessagingWiring(LivePipeline pipeline, BarEmitter barEmitter) {
+    public MessagingWiring(LivePipeline pipeline, BarEmitter barEmitter, IndicatorSnapshotEmitter snapshotEmitter) {
         this.pipeline = pipeline;
         this.barEmitter = barEmitter;
+        this.snapshotEmitter = snapshotEmitter;
     }
 
     void onStart(@Observes StartupEvent ev) {
@@ -44,6 +47,14 @@ public class MessagingWiring {
                 barEmitter.emit(bar);
             } catch (RuntimeException e) {
                 LOG.warn("kafka bar emit threw: {}", e.toString());
+            }
+        });
+        LOG.info("registering kafka indicator snapshot emitter listener (topic market.indicators.2m)");
+        pipeline.registerSnapshotListener(snap -> {
+            try {
+                snapshotEmitter.emit(snap);
+            } catch (RuntimeException e) {
+                LOG.warn("kafka indicator snapshot emit threw: {}", e.toString());
             }
         });
     }

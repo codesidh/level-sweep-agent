@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.levelsweep.marketdata.alpaca.AlpacaConfig;
 import com.levelsweep.marketdata.live.LivePipeline;
+import com.levelsweep.shared.domain.indicators.IndicatorSnapshot;
 import com.levelsweep.shared.domain.marketdata.Bar;
 import com.levelsweep.shared.domain.marketdata.Tick;
 import io.quarkus.runtime.StartupEvent;
@@ -53,6 +54,9 @@ class MessagingWiringTest {
     @Mock
     MutinyEmitter<Record<String, Bar>> daily;
 
+    @Mock
+    MutinyEmitter<Record<String, IndicatorSnapshot>> indicators2m;
+
     @SuppressWarnings("unchecked")
     private static Record<String, Bar> anyRecord() {
         return ArgumentMatchers.<Record<String, Bar>>any();
@@ -64,8 +68,9 @@ class MessagingWiringTest {
         when(twoMin.send(anyRecord())).thenReturn(Uni.createFrom().voidItem());
 
         BarEmitter emitter = new BarEmitter(oneMin, twoMin, fifteenMin, daily);
+        IndicatorSnapshotEmitter snapshotEmitter = new IndicatorSnapshotEmitter(indicators2m);
         LivePipeline pipeline = new LivePipeline(new StubConfig());
-        MessagingWiring wiring = new MessagingWiring(pipeline, emitter);
+        MessagingWiring wiring = new MessagingWiring(pipeline, emitter, snapshotEmitter);
 
         // Register the messaging listener on the pipeline.
         wiring.onStart(new StartupEvent());
