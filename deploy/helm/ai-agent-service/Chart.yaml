@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ai-agent-service
+description: Phase 4 AI agent service — Sentinel veto + Trade Narrator + Daily Reviewer (Anthropic Claude)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

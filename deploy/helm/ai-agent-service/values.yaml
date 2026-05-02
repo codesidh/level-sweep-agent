@@ -1,0 +1,159 @@
+# =============================================================================
+# Default values for ai-agent-service.
+#
+# DEPLOYMENT NOTE (Phase 4 Step 5): this chart deploys the AI agent service
+# (Sentinel veto + Trade Narrator + Daily Reviewer per architecture-spec §4.7
+# and ADR-0006). The dev AKS cluster was bumped to 2 nodes in Phase 3 to
+# accommodate market-data-service + execution-service; ai-agent-service
+# adds a third pod which fits comfortably in the 2 × Standard_D2s_v4
+# (4 vCPU / 16 GiB total) capacity at 250m CPU / 768 MiB requests each.
+#
+# Per-environment overrides are passed via `helm upgrade --install --set ...`
+# from .github/workflows/deploy-dev.yml. Do NOT put secrets here — KV-mounted
+# values flow in via the Azure Key Vault CSI SecretProviderClass. The
+# Anthropic API key is the most sensitive of these (cost cap is per-tenant
+# per-day per-role; see ADR-0006) and must NEVER be a GitHub workflow secret
+# at runtime — only KV-resident, mounted via CSI under the per-pod workload
+# identity.
+# =============================================================================
+
+image:
+  # set per env in the deploy workflow, e.g. "<acr>.azurecr.io/ai-agent-service".
+  repository: ""
+  # overridden per push to the immutable git SHA.
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Phase 4 single-instance per architecture-spec §16. Multi-replica + leader
+# election arrives in Phase 7 once the AI cost-tracker is sharded by tenant
+# and the Daily Reviewer cron is leader-elected.
+replicas: 1
+
+# Deployment strategy. Phase 4 dev is 2-node + single-replica per service, so
+# Recreate avoids the RollingUpdate deadlock where the new pod can't
+# schedule on the same node alongside its predecessor at 768 MiB requests.
+# Phase 7 production overrides this to RollingUpdate once the cluster has
+# 3+ nodes and HPA is wired.
+deployment:
+  strategy: Recreate
+  # maxSurge/maxUnavailable only used when strategy is RollingUpdate.
+  maxSurge: 1
+  maxUnavailable: 0
+
+service:
+  port: 8084
+  type: ClusterIP
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 768Mi
+  limits:
+    # Memory limit only — no CPU limit per Quarkus + JDK 21 best practice on
+    # K8s (CFS throttling kills latency tail). The HPA is added in Phase 7.
+    memory: 1536Mi
+
+# Plain-text application config. Anything secret comes from keyVault.objects.
+env:
+  TENANT_ID: "OWNER"
+  # Anthropic Messages API base URL — overridable for local stubs / a future
+  # regional endpoint. Per ADR-0006 the SDK is hand-rolled JDK HttpClient over
+  # POST /v1/messages — never a third-party SDK that pins this URL internally.
+  ANTHROPIC_BASE_URL: "https://api.anthropic.com"
+  # Kafka is not deployed in Phase 4 (Phase 6 introduces the Strimzi cluster).
+  # The trade-fills-in incoming channel swaps to in-memory under %prod, so
+  # a bogus bootstrap is safe in dev.
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  MONGO_URL: "mongodb://mongo:27017"
+  MONGO_DB: "level_sweep"
+  # Force the Quarkus profile to %prod so application.yml's
+  # `quarkus.opentelemetry.enabled: false` override kicks in. The App
+  # Insights Java agent (loaded as -javaagent in Dockerfile.jvm) owns the
+  # OTel pipeline in production; Quarkus' own OTel SDK is disabled to
+  # prevent double-emit + lifecycle races.
+  QUARKUS_PROFILE: "prod"
+  # Local-only OTel endpoint default. Unused in production because
+  # quarkus.opentelemetry.enabled is false under %prod, but kept so
+  # configuration shape matches dev / replay where Quarkus OTel is on.
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  # OTel service.name — App Insights agent reads this and stamps it as
+  # cloud_RoleName on every trace/log/metric. Without it, queries that
+  # filter on cloud_RoleName == "ai-agent-service" see zero rows
+  # (the agent default is "unknown_service:java").
+  OTEL_SERVICE_NAME: "ai-agent-service"
+
+# Workload identity binding (Azure AD federated → K8s ServiceAccount).
+workloadIdentity:
+  enabled: true
+  # Per-env: AKS-bound user-assigned MI client id. Phase 4 reuses the kubelet
+  # MI; Phase 7 swaps in a dedicated per-service MI federated to this SA.
+  clientId: ""
+
+keyVault:
+  enabled: true
+  # Per-env Azure AD tenant ID.
+  tenantId: ""
+  # Bare KV name (not URI). Set by the deploy workflow to keep template-side
+  # parsing trivial.
+  name: ""
+  # KV URI is stored on the SecretProviderClass too for traceability /
+  # downstream tooling.
+  vaultUri: ""
+  objects:
+    # Anthropic API key — owner-token Phase A; per-tenant Phase B (ADR-0006).
+    # Operators must mirror this from the GitHub `dev` environment secret
+    # ANTHROPIC_API_KEY into KV (one-shot manual `az keyvault secret set`)
+    # before this chart deploys cleanly.
+    - name: anthropic-api-key
+      type: secret
+      env: ANTHROPIC_API_KEY
+    - name: applicationinsights-connection-string
+      type: secret
+      env: APPLICATIONINSIGHTS_CONNECTION_STRING
+      optional: true
+    # mongo-url is intentionally NOT mounted in Phase 4. Managed Cosmos /
+    # MongoDB Atlas lands in Phase 7 per architecture-spec §13.2; until then
+    # the audit log + narrative + daily-report writers catch Mongo exceptions
+    # and log a WARN (the call still completes, just without persistence).
+    # Adding the mount back here is a one-line change once Phase 7 provisions
+    # the DB and seeds the secret.
+
+# Forward-compat keys mirrored from the execution-service chart shape so the
+# deploy-dev.yml --set list can stay symmetric across services. Templates
+# ignore these today; a future chart bump can wire them in without a workflow
+# edit.
+appInsights:
+  connectionStringSecretName: applicationinsights-connection-string
+
+anthropic:
+  apiKeySecretName: anthropic-api-key
+
+mongo:
+  urlSecretName: mongo-url
+
+healthCheck:
+  liveness:
+    path: /q/health/live
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    path: /q/health/ready
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+
+serviceAccount:
+  # Auto-derive from chart fullname when name is empty.
+  name: ""
+
+# Pod-level security context. Container-level overrides applied in deployment.yaml.
+podSecurityContext:
+  fsGroup: 100
+  runAsNonRoot: true
+  runAsUser: 100
