@@ -199,6 +199,10 @@ tenant:
   quarkus:
     scheduler:
       enabled: false
+    # Random free HTTP test port — Quarkus' default 8081 collides when Gradle
+    # runs multiple @QuarkusTest modules in parallel JVMs (see fix/test-port-collision).
+    http:
+      test-port: 0
     datasource:
       devservices:
         enabled: false
