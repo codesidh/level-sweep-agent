@@ -63,6 +63,7 @@ import org.mockito.ArgumentMatchers;
 class FillListenerServiceTest {
 
     private WsTransport transport;
+
     @SuppressWarnings("unchecked")
     private final Event<TradeFilled> filledBus = (Event<TradeFilled>) mock(Event.class);
 
@@ -124,11 +125,7 @@ class FillListenerServiceTest {
     @Test
     void idleModeWhenApiKeyIsBlank() throws Exception {
         FillListenerService bean = new FillListenerService(
-                "wss://paper-api.alpaca.markets/stream",
-                Optional.of(""),
-                Optional.of(""),
-                filledBus,
-                fillEventBus);
+                "wss://paper-api.alpaca.markets/stream", Optional.of(""), Optional.of(""), filledBus, fillEventBus);
 
         invokeStartup(bean, new StartupEvent());
 
@@ -160,11 +157,11 @@ class FillListenerServiceTest {
 
     @Test
     void constructorRejectsNullEvents() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FillListenerService(
-                        "wss://x", Optional.empty(), Optional.empty(), null, fillEventBus))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        new FillListenerService("wss://x", Optional.empty(), Optional.empty(), null, fillEventBus))
                 .isInstanceOf(NullPointerException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FillListenerService(
-                        "wss://x", Optional.empty(), Optional.empty(), filledBus, null))
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new FillListenerService("wss://x", Optional.empty(), Optional.empty(), filledBus, null))
                 .isInstanceOf(NullPointerException.class);
     }
 

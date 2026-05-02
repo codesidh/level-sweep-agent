@@ -132,8 +132,8 @@ class ConnectionMonitorTest {
     @Test
     void shouldShortCircuitOnlyWhenUnhealthyWithinProbeInterval() {
         TestClock clock = new TestClock(Instant.parse("2026-04-30T13:30:00Z"));
-        ConnectionMonitor m = new ConnectionMonitor(
-                "alpaca-trade-updates", clock, Duration.ofSeconds(30), Duration.ofSeconds(15));
+        ConnectionMonitor m =
+                new ConnectionMonitor("alpaca-trade-updates", clock, Duration.ofSeconds(30), Duration.ofSeconds(15));
 
         // HEALTHY → no short-circuit.
         assertThat(m.shouldShortCircuit()).isFalse();
@@ -152,8 +152,8 @@ class ConnectionMonitorTest {
     @Test
     void errorsOutsideWindowAreEvictedAndDoNotEscalate() {
         TestClock clock = new TestClock(Instant.parse("2026-04-30T13:30:00Z"));
-        ConnectionMonitor m = new ConnectionMonitor(
-                "alpaca-trade-updates", clock, Duration.ofSeconds(30), Duration.ofSeconds(15));
+        ConnectionMonitor m =
+                new ConnectionMonitor("alpaca-trade-updates", clock, Duration.ofSeconds(30), Duration.ofSeconds(15));
 
         // Two old errors fall outside the 30s window when the third fires.
         m.recordError(new RuntimeException("old-1"));
