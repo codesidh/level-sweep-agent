@@ -284,3 +284,219 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "tick_drop_rate" {
 
   tags = var.tags
 }
+
+# =============================================================================
+# Phase 3 alerts — Execution Service (Alpaca paper trading).
+#
+# Cumulative on top of the Phase 1 set; per architecture-spec §21.1 the Phase 3
+# entry-gate soak is against the live Alpaca options + execution stack, so the
+# new alerts cover (a) Alpaca connection health, (b) order-fill timeouts on the
+# happy path, (c) end-of-day flatten failures (real-money risk via 0DTE auto-
+# exercise at 16:00 ET), and (d) NBBO snapshot staleness for the trail manager.
+#
+# All four reuse the Phase 1 action group — Phase 7 splits Sev 1 paging onto a
+# separate group with Twilio SMS. Until then, email-only.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 6. Alpaca CB UNHEALTHY (P1)
+# -----------------------------------------------------------------------------
+# ConnectionState ordinals (com.levelsweep.marketdata.connection.ConnectionState):
+#   0=HEALTHY, 1=DEGRADED, 2=UNHEALTHY, 3=RECOVERING.
+# Phase 3 introduces two new Connection FSMs in execution-service:
+#   - alpaca-rest               (order placement, position queries)
+#   - alpaca-trade-updates-ws   (fill notifications)
+# When either reaches UNHEALTHY for >= 3 consecutive samples, Risk FSM auto-
+# HALTs new entries (CLAUDE.md guardrail #3 fail-closed). 1-minute bins, so
+# 3 consecutive unhealthy samples == 3 minutes; we use a 5-minute window with
+# threshold 3 to require sustained unhealthy.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "alpaca_cb_unhealthy" {
+  name                = "alert-${var.project}-${var.environment}-alpaca-cb-unhealthy"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT5M"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 1 # Sev 1 == P1 — Risk FSM HALTs new entries on this signal
+  enabled              = true
+
+  description             = "Alpaca REST or trade-updates WS connection FSM is UNHEALTHY for 3+ consecutive samples. Risk FSM has auto-HALTed new entries (fail-closed). Existing positions continue under deterministic exit rules."
+  display_name            = "P1 — Alpaca CB UNHEALTHY (rest|trade-updates-ws)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      customMetrics
+      | where name == "connection_state"
+      | where customDimensions.dependency in ("alpaca-rest", "alpaca-trade-updates-ws")
+      | where value >= 2
+      | summarize unhealthy_samples = count() by bin(timestamp, 1m), tostring(customDimensions.dependency)
+      | where unhealthy_samples > 0
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 3 # 3 consecutive 1-minute bins unhealthy across either dependency
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 7. Order fill timeout (P2)
+# -----------------------------------------------------------------------------
+# Saga step 5 (place + await fill) emits the log line "order fill timeout"
+# from its compensation path when a TradeOrderSubmitted has no matching
+# TradeFilled within 30 seconds. We use the simpler log-pattern KQL here
+# rather than the FSM-correlated count(submitted) - count(filled) approach;
+# the saga compensation log is the single source of truth and is already
+# emitted with cloud_RoleName == "execution-service".
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "order_fill_timeout" {
+  name                = "alert-${var.project}-${var.environment}-order-fill-timeout"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT5M"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 2 # Sev 2 == P2 — saga compensates; no real-money loss but we missed an entry
+  enabled              = true
+
+  description             = "Saga step 5 logged 'order fill timeout' — a TradeOrderSubmitted had no matching TradeFilled within 30 seconds. Compensation has cancelled the order; investigate Alpaca latency or NBBO drift."
+  display_name            = "P2 — Order fill timeout"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      traces
+      | where cloud_RoleName == "execution-service"
+      | where message contains "order fill timeout"
+      | summarize timeouts = count() by bin(timestamp, 5m)
+      | where timeouts > 0
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 8. EOD flatten failure (P1)
+# -----------------------------------------------------------------------------
+# The 15:55 ET cron in execution-service walks all open positions and emits
+# a TradeExitRequested per position; each result is written to the
+# eod_flatten_attempts audit table. A row with outcome = 'FAILED' indicates
+# the flatten did not exit a position before 16:00 ET — at which point 0DTE
+# SPY options auto-exercise. That's real money even on Alpaca paper.
+#
+# This rule fires off the corresponding log line from the cron's per-trade
+# loop ("eod flatten: trade FAILED"). The complementary "EOD flatten missed"
+# alert (no audit row at all) is intentionally NOT in this PR — it requires
+# a synthetic heartbeat, see TODO below.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "eod_flatten_failure" {
+  name                = "alert-${var.project}-${var.environment}-eod-flatten-failure"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT5M"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 1 # Sev 1 == P1 — 0DTE auto-exercise at 16:00 ET is real money even on paper
+  enabled              = true
+
+  description             = "EOD flatten cron logged 'eod flatten: trade FAILED' — at least one open position did not exit before 16:00 ET. 0DTE auto-exercise risk. Operator: page broker desk and reconcile manually. P0 escalation if NO audit row exists at all (cron didn't fire) — separate 'EOD flatten missed' alert TBD."
+  display_name            = "P1 — EOD flatten failure"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      traces
+      | where cloud_RoleName == "execution-service"
+      | where message contains "eod flatten: trade FAILED"
+      | summarize failures = count() by bin(timestamp, 5m)
+      | where failures > 0
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 9. Trail manager NBBO snapshot stale (P3)
+# -----------------------------------------------------------------------------
+# AlpacaQuotesClient polls NBBO every few seconds for the trail manager. On
+# poll failure it logs "trail.poll.stale" with the trade-id. Stale NBBO does
+# NOT trigger an exit (fail-closed for the exit path — we only exit on a
+# fresh quote crossing the trail). This alert is informational; chronic
+# staleness suggests Alpaca quote-feed throttling or auth drift.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "trail_nbbo_stale" {
+  name                = "alert-${var.project}-${var.environment}-trail-nbbo-stale"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT5M"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 3 # Sev 3 == P3 — informational; stale NBBO does not exit the trade
+  enabled              = true
+
+  description             = "AlpacaQuotesClient logged 'trail.poll.stale' more than 3 times in a 30-second bin. Trail manager is operating on stale NBBO — exits are fail-closed (no exit on stale quote). Investigate Alpaca quote-feed throttling or auth drift."
+  display_name            = "P3 — Trail manager NBBO stale"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      traces
+      | where cloud_RoleName == "execution-service"
+      | where message contains "trail.poll.stale"
+      | summarize stale_polls = count() by bin(timestamp, 30s)
+      | where stale_polls > 3
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
