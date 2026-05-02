@@ -97,7 +97,7 @@ module "aks" {
   log_analytics_workspace_id = module.observability.log_analytics_workspace_id
   acr_id                     = module.registry.acr_id
 
-  # Phase 1 dev cost-tuned defaults — see `architecture-spec.md` §16 cost table.
+  # Phase 3 dev cost-tuned defaults — see `architecture-spec.md` §16 cost table.
   # Production (Phase 7) overrides these in `infra/environments/prod/main.tf`
   # for HA + sustained throughput.
   #
@@ -107,7 +107,20 @@ module "aks" {
   # for new Pay-As-You-Go subscriptions. ARM-based B-series (b2ps_v2) is
   # allowed but would require multi-arch container builds. Phase 7 may
   # request quota extension for B-series amd64 to drop cost further.
-  node_count          = 1
+  #
+  # node_count: bumped from 1 → 2 in Phase 3 because the dev cluster now hosts
+  # both market-data-service and execution-service concurrently. Each pod
+  # requests 250m CPU / 768 MiB; with DaemonSets + system overhead a single
+  # D2s_v4 node has < 500m CPU available, which forces one of the two
+  # workloads into Pending. Two nodes give each pod its own scheduling
+  # headroom (~$140/mo total: 2 × ~$70/mo). When `iac.yml` runs
+  # `terraform apply` on this change AKS performs a node-pool upgrade — the
+  # existing market-data-service pod is rescheduled onto the new node pool
+  # via a rolling roll; no traffic loss is expected for Phase 1 services
+  # (market-data-service has no inbound user traffic, only an outbound
+  # WebSocket to Alpaca which auto-reconnects). Phase 7 revisits HPA + a
+  # 3-node pool once additional services land.
+  node_count          = 2
   vm_size             = "Standard_D2s_v4"
   enable_azure_policy = false
   outbound_type       = "loadBalancer"
@@ -151,6 +164,19 @@ resource "azurerm_federated_identity_credential" "market_data_sa" {
   audience            = ["api://AzureADTokenExchange"]
   issuer              = module.aks.oidc_issuer_url
   subject             = "system:serviceaccount:market-data:market-data-service"
+}
+
+# Phase 3: execution-service binds to the same kubelet MI via its own federated
+# credential. Subject must match the deploy-dev.yml `--namespace` +
+# ServiceAccount name produced by the Helm chart. Phase 7 splits this off into
+# a dedicated per-service workload MI alongside market-data-service.
+resource "azurerm_federated_identity_credential" "execution_service_sa" {
+  name                = "fc-${var.project}-${local.environment}-execution-service"
+  resource_group_name = module.aks.cluster_resource_group
+  parent_id           = module.aks.kubelet_user_assigned_identity_id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = module.aks.oidc_issuer_url
+  subject             = "system:serviceaccount:execution-service:execution-service"
 }
 
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
