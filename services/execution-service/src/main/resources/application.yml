@@ -77,6 +77,27 @@ mp:
         auto.offset.reset: latest
         key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
         value.deserializer: com.levelsweep.execution.ingest.TradeProposedDeserializer
+      # Phase 3 S4 Stop Watcher — bars + indicator snapshots from
+      # market-data-service on the 2-minute timeframe. Joined by (symbol,
+      # timestamp) inside BarIndicatorJoiner; §9 trigger fires only when
+      # both sides arrive within 5s (ADR-0005 §1, fail-closed otherwise).
+      # auto.offset.reset is `latest` so a restart does not replay 30 days
+      # of historic bars (the watcher's registered-stops are in-memory and
+      # repopulate from new TradeFilled events, not from history).
+      bars-2m:
+        connector: smallrye-kafka
+        topic: market.bars.2m
+        group.id: execution-service
+        auto.offset.reset: latest
+        key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+        value.deserializer: com.levelsweep.execution.stopwatch.BarDeserializer
+      indicators-2m:
+        connector: smallrye-kafka
+        topic: market.indicators.2m
+        group.id: execution-service
+        auto.offset.reset: latest
+        key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+        value.deserializer: com.levelsweep.execution.stopwatch.IndicatorSnapshotDeserializer
     outgoing:
       # Phase 3 Step 3 — fills produced by the Alpaca trade-updates WS listener
       # are published to tenant.fills (architecture-spec §12.1). Keyed by
@@ -119,6 +140,13 @@ levelsweep:
     # Phase B flags — see docs/feature-flags.md. ALL OFF.
     phase-b-multi-tenant-onboarding: false
     phase-b-alpaca-oauth: false
+  # Phase 3 S5 Trail Manager (ADR-0005 §2). Sustainment-3 is the default —
+  # a single noisy NBBO snapshot never advances the FSM. Phase 3 soak data
+  # may re-tune; Phase 8 production locks the value.
+  trail:
+    sustainment-snapshots: 3
+    activation-upl-pct: "0.30"
+    ratchet-step-pct: "0.05"
 
 tenant:
   id: "${TENANT_ID:OWNER}"
@@ -148,6 +176,11 @@ tenant:
       incoming:
         trade-proposed-in:
           connector: smallrye-in-memory
+        # Phase 3 S4 — same Kafka-absent dev story as trade-proposed-in.
+        bars-2m:
+          connector: smallrye-in-memory
+        indicators-2m:
+          connector: smallrye-in-memory
       # Same Phase 3 reason as the incoming swap above — dev cluster has no
       # Kafka. The publisher itself is gated with @UnlessBuildProfile("prod")
       # so it never reaches the channel in %prod, but the channel must still
@@ -176,6 +209,12 @@ tenant:
     messaging:
       incoming:
         trade-proposed-in:
+          connector: smallrye-in-memory
+        # Phase 3 S4 — @QuarkusTest profile swap so SmokeTest validates the
+        # @Incoming wiring without bootstrapping a Kafka client.
+        bars-2m:
+          connector: smallrye-in-memory
+        indicators-2m:
           connector: smallrye-in-memory
       # Outgoing trade-filled-out swaps to in-memory so @QuarkusTest doesn't
       # bootstrap a Kafka producer. Channel wiring still validates at build
