@@ -38,6 +38,10 @@ kafka:
     servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
 
 anthropic:
+  # Anthropic Messages API base URL — overridable for local stubs / a future
+  # regional endpoint. Per ADR-0006 the SDK is hand-rolled JDK HttpClient over
+  # POST /v1/messages — never a third-party SDK that pins this URL internally.
+  base-url: "${ANTHROPIC_BASE_URL:https://api.anthropic.com}"
   api-key: "${ANTHROPIC_API_KEY:}"
   models:
     sentinel: "claude-haiku-4-5"
@@ -51,6 +55,15 @@ anthropic:
     reviewer: 2.00
   enable-prompt-caching: true
 
+# Mongo collection names for the AI audit log (architecture-spec §4.10 +
+# ADR-0006). `ai_calls` is the per-call summary; `ai_prompts` is the cold
+# blob keyed by SHA-256 prompt hash; `daily_cost` is the per-call cost row
+# that DailyCostTracker rebuilds from on JVM restart.
+audit:
+  ai-calls-collection: "ai_calls"
+  ai-prompts-collection: "ai_prompts"
+  daily-cost-collection: "daily_cost"
+
 levelsweep:
   tenant:
     bootstrap-id: OWNER
@@ -60,3 +73,27 @@ levelsweep:
       - trace_id
       - ai_role
       - signal_id
+
+# Test profile — Quarkus dev-services would otherwise try to spin up Mongo
+# (and any other auto-discovered backend) in CI. Disable so unit tests run
+# without Docker. Anthropic api-key blanked so AnthropicClient does not try to
+# call out from a unit test that accidentally constructs the bean directly.
+"%test":
+  quarkus:
+    mongodb:
+      devservices:
+        enabled: false
+    # Random free HTTP test port — Quarkus' default 8081 collides when Gradle
+    # runs multiple @QuarkusTest modules in parallel JVMs.
+    http:
+      test-port: 0
+  anthropic:
+    api-key: ""
+
+# Production profile placeholder — S2/S3 add Kafka in-memory swaps here when
+# the Narrator/Reviewer Kafka channels arrive. For S1 the service has no
+# incoming/outgoing channels yet, so nothing to swap.
+"%prod":
+  quarkus:
+    opentelemetry:
+      enabled: false
