@@ -211,3 +211,100 @@ jobs:
         run: |
           kubectl -n execution-service rollout status deployment/execution-service --timeout=5m
           kubectl -n execution-service get pods,svc
+
+  # ---------------------------------------------------------------------------
+  # Phase 4 — ai-agent-service deploy. Mirrors the execution-service job
+  # above. Lives in its own namespace `ai-agent` so a failed deploy of one
+  # service does not block the others. The federated-identity binding for
+  # the SA
+  #   system:serviceaccount:ai-agent:ai-agent-service
+  # is created by `infra/environments/dev/main.tf` →
+  # azurerm_federated_identity_credential.ai_agent_service_sa, which must be
+  # applied by iac.yml before this job runs successfully against a fresh
+  # cluster.
+  #
+  # Operator setup before first run: mirror the GitHub `dev` environment
+  # ANTHROPIC_API_KEY secret into Key Vault as `anthropic-api-key`. Until that
+  # secret exists in KV, the chart's CSI mount fails and the pod stays in
+  # ContainerCreating. Mirror command (run once):
+  #   az keyvault secret set --vault-name <KEY_VAULT_NAME> \
+  #     --name anthropic-api-key --value "<owner Anthropic API key>"
+  # ---------------------------------------------------------------------------
+  deploy-ai-agent-service:
+    name: deploy ai-agent-service to dev
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+
+    steps:
+      # On workflow_run, checkout defaults to the default branch tip — pin to
+      # the head_sha that main.yml just built so the chart and the image are
+      # in lockstep.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Install kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.1.4
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+          # AKS API server now requires AAD auth; convert kubeconfig from the
+          # interactive azurecli plugin to the non-interactive form so the
+          # OIDC token from azure/login is consumed without prompting.
+          kubelogin convert-kubeconfig -l azurecli
+
+      - name: Resolve image tag SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "value=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Helm upgrade --install
+        # The Anthropic API key flows through Key Vault rather than a GitHub
+        # secret — it's stored as the `anthropic-api-key` KV secret and
+        # mounted into the pod via the CSI SecretProviderClass under the
+        # workload identity bound to the federated credential applied by TF.
+        # Operators must mirror ANTHROPIC_API_KEY (GitHub `dev` env secret)
+        # into KV before this job's first successful run; see job header.
+        run: |
+          helm upgrade --install ai-agent-service deploy/helm/ai-agent-service \
+            --namespace ai-agent \
+            --create-namespace \
+            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/ai-agent-service" \
+            --set image.tag="${{ steps.sha.outputs.value }}" \
+            --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
+            --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+            --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
+            --set keyVault.vaultUri="${{ secrets.KEY_VAULT_URI }}" \
+            --set appInsights.connectionStringSecretName=applicationinsights-connection-string \
+            --set anthropic.apiKeySecretName=anthropic-api-key \
+            --wait \
+            --timeout 5m
+
+      - name: Verify rollout
+        run: |
+          kubectl -n ai-agent rollout status deployment/ai-agent-service --timeout=5m
+          kubectl -n ai-agent get pods,svc

@@ -179,6 +179,25 @@ resource "azurerm_federated_identity_credential" "execution_service_sa" {
   subject             = "system:serviceaccount:execution-service:execution-service"
 }
 
+# Phase 4: ai-agent-service binds to the same kubelet MI via its own federated
+# credential. Subject must match the deploy-dev.yml `--namespace` +
+# ServiceAccount name produced by the Helm chart. The dev cluster's 2 ×
+# Standard_D2s_v4 (4 vCPU / 16 GiB total) capacity, sized in Phase 3 for
+# market-data-service + execution-service, has the headroom to host this
+# third Quarkus pod (each requests 250m CPU / 768 MiB → 3 × ~1 GiB ~= 3 GiB
+# of 16 GiB; well within budget). Phase 7 splits this off into a dedicated
+# per-service workload MI alongside market-data-service + execution-service
+# AND revisits the node-pool size once decision-engine and the cold-path
+# Spring services land.
+resource "azurerm_federated_identity_credential" "ai_agent_service_sa" {
+  name                = "fc-${var.project}-${local.environment}-ai-agent-service"
+  resource_group_name = module.aks.cluster_resource_group
+  parent_id           = module.aks.kubelet_user_assigned_identity_id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = module.aks.oidc_issuer_url
+  subject             = "system:serviceaccount:ai-agent:ai-agent-service"
+}
+
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
   scope                = module.keyvault.kv_id
   role_definition_name = "Key Vault Secrets User"
