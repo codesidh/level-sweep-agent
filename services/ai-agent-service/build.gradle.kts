@@ -30,6 +30,10 @@ dependencies {
     implementation(libs.smallrye.messaging.inmemory)
     implementation(libs.quarkus.mongodb.client)
     implementation(libs.quarkus.smallrye.fault.tolerance)
+    // Phase 4 S3 Daily Reviewer — @Scheduled cron at 16:30 ET runs the
+    // session reviewer. Same extension execution-service uses for the EOD
+    // flatten cron at 15:55 ET.
+    implementation(libs.quarkus.scheduler)
 
     // Anthropic Java SDK: per ADR-0006 we hand-roll a JDK HttpClient against
     // the public Messages REST API rather than pulling LangChain4J / Spring AI
