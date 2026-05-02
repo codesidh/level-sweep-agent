@@ -222,7 +222,8 @@ public final class AlpacaTradeUpdatesDecoder {
         // upstream WS frame has no other stable token).
         String correlationId = alpacaOrderId;
 
-        // Alpaca emits "fill" / "partial_fill"; TradeFilled.status validates {"filled", "partial_fill"} (past-tense for fill).
+        // Alpaca emits "fill" / "partial_fill"; TradeFilled.status validates {"filled", "partial_fill"} (past-tense for
+        // fill).
         String tradeFilledStatus = "fill".equals(event) ? "filled" : event;
         TradeFilled filled = new TradeFilled(
                 tenantId,
