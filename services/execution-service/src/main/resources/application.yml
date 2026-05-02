@@ -81,11 +81,14 @@ mp:
 
 alpaca:
   # Phase A: owner token from env / Key Vault. Phase B: per-tenant OAuth.
-  # Phase 3 Step 2 (order placement) wires the Alpaca REST client. The S2 PR
-  # adds the SDK / hand-rolled HTTP client and the corresponding @ConfigProperty
-  # bindings.
+  # Phase 3 Step 2 (order placement) wires the Alpaca REST client via a
+  # hand-rolled JDK HttpClient (see AlpacaTradingClient). Both api-key and
+  # secret-key bind as Optional<String> on the consumer side so dev / replay
+  # can boot with empty values; an outbound request without credentials is
+  # still attempted and the 401 is surfaced as OrderSubmission.Rejected.
   base-url: "${ALPACA_BASE_URL:https://paper-api.alpaca.markets}"
   key-id: "${ALPACA_KEY_ID:}"
+  api-key: "${ALPACA_API_KEY:${ALPACA_KEY_ID:}}"
   secret-key: "${ALPACA_SECRET_KEY:}"
 
 # Per-tenant + per-trace MDC keys. `tenant.id` is read by the startup banner
