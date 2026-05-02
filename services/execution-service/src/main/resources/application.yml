@@ -77,16 +77,29 @@ mp:
         auto.offset.reset: latest
         key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
         value.deserializer: com.levelsweep.execution.ingest.TradeProposedDeserializer
-    outgoing: { }
+    outgoing:
+      # Phase 3 Step 3 — fills produced by the Alpaca trade-updates WS listener
+      # are published to tenant.fills (architecture-spec §12.1). Keyed by
+      # tenantId so the broker partitions per-tenant; the decision-engine
+      # per-trade FSM is the primary downstream consumer (drives ENTERED ->
+      # ACTIVE on first fill). Mirrors decision-engine's trade-proposed-out.
+      trade-filled-out:
+        connector: smallrye-kafka
+        topic: tenant.fills
+        key.serializer: org.apache.kafka.common.serialization.StringSerializer
+        value.serializer: io.quarkus.kafka.client.serialization.ObjectMapperSerializer
 
 alpaca:
   # Phase A: owner token from env / Key Vault. Phase B: per-tenant OAuth.
-  # Phase 3 Step 2 (order placement) wires the Alpaca REST client via a
-  # hand-rolled JDK HttpClient (see AlpacaTradingClient). Both api-key and
-  # secret-key bind as Optional<String> on the consumer side so dev / replay
-  # can boot with empty values; an outbound request without credentials is
-  # still attempted and the 401 is surfaced as OrderSubmission.Rejected.
+  # Phase 3 Step 2 (order placement) wires the Alpaca REST client; Step 3 (the
+  # trade-updates WS listener) wires the FillListenerService. Both bind the
+  # same api-key/secret-key pair as Optional<String> on the consumer side so
+  # dev / replay can boot with empty values.
   base-url: "${ALPACA_BASE_URL:https://paper-api.alpaca.markets}"
+  # Phase 3 Step 3 — paper trade-updates WebSocket endpoint
+  # (architecture-spec §3.6). The FillListenerService binds this; live prod
+  # will swap to the live trading WS endpoint via env override.
+  trade-updates-url: "${ALPACA_TRADE_UPDATES_URL:wss://paper-api.alpaca.markets/stream}"
   key-id: "${ALPACA_KEY_ID:}"
   api-key: "${ALPACA_API_KEY:${ALPACA_KEY_ID:}}"
   secret-key: "${ALPACA_SECRET_KEY:}"
@@ -135,6 +148,13 @@ tenant:
       incoming:
         trade-proposed-in:
           connector: smallrye-in-memory
+      # Same Phase 3 reason as the incoming swap above — dev cluster has no
+      # Kafka. The publisher itself is gated with @UnlessBuildProfile("prod")
+      # so it never reaches the channel in %prod, but the channel must still
+      # be configured (Quarkus validates outgoing channel wiring at build).
+      outgoing:
+        trade-filled-out:
+          connector: smallrye-in-memory
 
 # Test profile — Quarkus dev-services would otherwise try to spin up Mongo,
 # MS SQL, and Kafka containers in CI. Disable them here so unit tests run
@@ -156,4 +176,11 @@ tenant:
     messaging:
       incoming:
         trade-proposed-in:
+          connector: smallrye-in-memory
+      # Outgoing trade-filled-out swaps to in-memory so @QuarkusTest doesn't
+      # bootstrap a Kafka producer. Channel wiring still validates at build
+      # time — the publisher is constructible by ARC, just emits to the
+      # in-memory bus.
+      outgoing:
+        trade-filled-out:
           connector: smallrye-in-memory
