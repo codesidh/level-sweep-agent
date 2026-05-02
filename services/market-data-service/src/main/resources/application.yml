@@ -184,6 +184,10 @@ tenant:
 # migrate against during plain unit tests.
 "%test":
   quarkus:
+    # Random free HTTP test port — Quarkus' default 8081 collides when Gradle
+    # runs multiple @QuarkusTest modules in parallel JVMs (see fix/test-port-collision).
+    http:
+      test-port: 0
     flyway:
       enabled: false
     datasource:
