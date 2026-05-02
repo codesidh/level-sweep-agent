@@ -18,6 +18,16 @@ dependencies {
     implementation(libs.quarkus.micrometer.prometheus)
     implementation(libs.quarkus.opentelemetry)
     implementation(libs.quarkus.kafka.client)
+    // Phase 4 S2 Trade Narrator — consumes the tenant.fills topic via
+    // @Incoming("trade-fills-in"). Same extension execution-service pulls for
+    // its TradeProposed consumer. Kept narrow on purpose: the narrator is
+    // the only Kafka consumer in ai-agent-service for Phase 4.
+    implementation(libs.quarkus.messaging.kafka)
+    // Phase 4 dev cluster has no Kafka — the %prod and %test profiles route
+    // the trade-fills-in incoming channel to the in-memory connector so
+    // consumer construction does not crash on broker DNS at boot. Same
+    // pattern as execution-service's trade-proposed-in / decision-engine.
+    implementation(libs.smallrye.messaging.inmemory)
     implementation(libs.quarkus.mongodb.client)
     implementation(libs.quarkus.smallrye.fault.tolerance)
 

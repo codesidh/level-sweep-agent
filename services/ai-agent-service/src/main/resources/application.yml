@@ -37,6 +37,20 @@ kafka:
   bootstrap:
     servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
 
+# Phase 4 S2 Trade Narrator — consumes tenant.fills published by execution-service
+# (architecture-spec §12.1). The typed value-deserializer is the canonical
+# Quarkus recipe (see services/execution-service for the mirror pattern).
+mp:
+  messaging:
+    incoming:
+      trade-fills-in:
+        connector: smallrye-kafka
+        topic: tenant.fills
+        group.id: ai-agent-service
+        auto.offset.reset: latest
+        key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+        value.deserializer: com.levelsweep.aiagent.narrator.TradeFilledDeserializer
+
 anthropic:
   # Anthropic Messages API base URL — overridable for local stubs / a future
   # regional endpoint. Per ADR-0006 the SDK is hand-rolled JDK HttpClient over
@@ -64,6 +78,13 @@ audit:
   ai-prompts-collection: "ai_prompts"
   daily-cost-collection: "daily_cost"
 
+# Phase 4 S2 Trade Narrator — Mongo collection for the per-event narratives
+# surfaced on the trader dashboard + journal (architecture-spec §4.3.2 +
+# §13.2 row "journal.narratives"). Indexed by (tenant_id, trade_id,
+# generated_at desc) for the journal query path.
+narrator:
+  trade-narratives-collection: "trade_narratives"
+
 levelsweep:
   tenant:
     bootstrap-id: OWNER
@@ -83,17 +104,34 @@ levelsweep:
     mongodb:
       devservices:
         enabled: false
+    kafka:
+      devservices:
+        enabled: false
     # Random free HTTP test port — Quarkus' default 8081 collides when Gradle
     # runs multiple @QuarkusTest modules in parallel JVMs.
     http:
       test-port: 0
   anthropic:
     api-key: ""
+  # Phase 4 S2 — @QuarkusTest profile swap so SmokeTest validates the
+  # @Incoming wiring without bootstrapping a Kafka client.
+  mp:
+    messaging:
+      incoming:
+        trade-fills-in:
+          connector: smallrye-in-memory
 
-# Production profile placeholder — S2/S3 add Kafka in-memory swaps here when
-# the Narrator/Reviewer Kafka channels arrive. For S1 the service has no
-# incoming/outgoing channels yet, so nothing to swap.
+# Production profile — Phase 4 dev cluster has no Kafka (Strimzi lands in
+# Phase 6 per architecture-spec §12), so the trade-fills-in incoming channel
+# swaps to the in-memory connector. The @Incoming-annotated listener still
+# wires up — it just receives events from the in-memory bus instead of Kafka.
+# Same pattern as execution-service / decision-engine.
 "%prod":
   quarkus:
     opentelemetry:
       enabled: false
+  mp:
+    messaging:
+      incoming:
+        trade-fills-in:
+          connector: smallrye-in-memory
