@@ -85,6 +85,18 @@ audit:
 narrator:
   trade-narratives-collection: "trade_narratives"
 
+# Phase 4 S3 Daily Reviewer — Mongo collection for the EOD session reports
+# surfaced on the trader dashboard (architecture-spec §4.3.4 + §13.2 row
+# "journal.daily_reports"). Indexed by (tenant_id, session_date desc) for
+# the dashboard "last N reports for tenant" query.
+#
+# signal-history-collection: reserved for the Phase 5/6 producer (decision-
+# engine). Phase 4's SessionJournalAggregator queries it best-effort and
+# treats an empty result as "not wired yet".
+reviewer:
+  daily-reports-collection: "daily_reports"
+  signal-history-collection: "signal_history"
+
 levelsweep:
   tenant:
     bootstrap-id: OWNER
@@ -111,6 +123,11 @@ levelsweep:
     # runs multiple @QuarkusTest modules in parallel JVMs.
     http:
       test-port: 0
+    # Phase 4 S3 Daily Reviewer — disable the cron in @QuarkusTest so unit
+    # tests drive runOnce() directly without the Quartz harness firing on
+    # the wall clock.
+    scheduler:
+      enabled: false
   anthropic:
     api-key: ""
   # Phase 4 S2 — @QuarkusTest profile swap so SmokeTest validates the
