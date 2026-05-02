@@ -21,15 +21,19 @@ dependencies {
     implementation(libs.quarkus.mongodb.client)
     implementation(libs.quarkus.smallrye.fault.tolerance)
 
-    // Anthropic Java SDK: no first-party SDK on Maven Central as of Phase 0.
-    // Phase 4 (AI Agent Service implementation) decides between LangChain4J's
-    // anthropic adapter, Spring AI's anthropic starter, or a hand-rolled
-    // HTTP client against the public REST API. Track in ADR before wiring.
-    // implementation(libs.anthropic.sdk)
+    // Anthropic Java SDK: per ADR-0006 we hand-roll a JDK HttpClient against
+    // the public Messages REST API rather than pulling LangChain4J / Spring AI
+    // / a future first-party SDK. Mirrors AlpacaTradingClient's pattern.
+    //
+    // implementation(libs.anthropic.sdk) — explicitly NOT pulled.
 
     testImplementation(libs.quarkus.junit5)
     testImplementation(libs.quarkus.rest.assured)
     testImplementation(libs.assertj.core)
+    // Mockito for the AnthropicClient/DailyCostTracker/AuditWriter unit tests.
+    // Same coordinates execution-service / decision-engine / market-data-service use.
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.junit.jupiter)
 }
 
 tasks.register("nativeBuild") {
