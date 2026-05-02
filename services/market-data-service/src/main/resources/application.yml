@@ -75,8 +75,9 @@ mp:
   messaging:
     incoming: { }
     # Outgoing bar topics — architecture-spec §12.1. Key is the symbol (StringSerializer),
-    # value is the Bar record serialized to JSON via Quarkus' ObjectMapperSerializer (Jackson).
-    # Indicators and levels are NOT published here; spec §12.1 doesn't list them.
+    # value is the Bar / IndicatorSnapshot record serialized to JSON via Quarkus'
+    # ObjectMapperSerializer (Jackson). Levels are NOT published — Decision Engine reads
+    # them from MS SQL daily_state directly in Phase 2.
     outgoing:
       bars-1m:
         connector: smallrye-kafka
@@ -96,6 +97,14 @@ mp:
       bars-daily:
         connector: smallrye-kafka
         topic: market.bars.daily
+        value.serializer: io.quarkus.kafka.client.serialization.ObjectMapperSerializer
+        key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Indicator snapshot topic — architecture-spec §12.1. Decision Engine subscribes
+      # to populate IndicatorSnapshotHolder so SignalEvaluator can score live bars; Phase 3
+      # S4-S5 (Stop Watcher / Trail Manager) also consume for §9 trigger evaluation.
+      indicators-2m:
+        connector: smallrye-kafka
+        topic: market.indicators.2m
         value.serializer: io.quarkus.kafka.client.serialization.ObjectMapperSerializer
         key.serializer: org.apache.kafka.common.serialization.StringSerializer
 
@@ -166,6 +175,8 @@ tenant:
           connector: smallrye-in-memory
         bars-daily:
           connector: smallrye-in-memory
+        indicators-2m:
+          connector: smallrye-in-memory
 
 # Test profile — Quarkus dev-services would otherwise try to spin up Mongo
 # and MS SQL containers in CI. Disable them here so unit tests run without
@@ -201,4 +212,6 @@ tenant:
         bars-15m:
           connector: smallrye-in-memory
         bars-daily:
+          connector: smallrye-in-memory
+        indicators-2m:
           connector: smallrye-in-memory

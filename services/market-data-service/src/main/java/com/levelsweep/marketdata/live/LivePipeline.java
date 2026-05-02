@@ -101,6 +101,11 @@ public class LivePipeline {
     // Additional bar listeners registered post-construction (e.g. persistence wiring).
     // Copy-on-write so the bar fan-out lambda iterates a stable snapshot per call.
     private final CopyOnWriteArrayList<BarListener> additionalBarListeners = new CopyOnWriteArrayList<>();
+    // Additional indicator-snapshot listeners registered post-construction (e.g. Kafka
+    // emitter wiring). Same copy-on-write rationale as {@link #additionalBarListeners} —
+    // the snapshot sink lambda iterates a stable snapshot of subscribers per call.
+    private final CopyOnWriteArrayList<java.util.function.Consumer<IndicatorSnapshot>> additionalSnapshotListeners =
+            new CopyOnWriteArrayList<>();
 
     private volatile AlpacaStream stream;
     private volatile Thread drainer;
@@ -151,10 +156,26 @@ public class LivePipeline {
         // IndicatorEngine first so the bar fan-out lambda below can capture it as a
         // definitely-assigned final local (Java's definite-assignment doesn't track
         // lambda captures across out-of-order constructor assignments).
+        //
+        // The snap sink retains its DEBUG-line for Phase 1 operator troubleshooting and
+        // additionally fans out to externally-registered listeners (e.g. the Kafka
+        // {@code IndicatorSnapshotEmitter} wired via {@code MessagingWiring}). Per-listener
+        // exception isolation — one listener's failure must not block the others or stall
+        // the indicator engine.
         java.util.function.Consumer<IndicatorSnapshot> snapSink = snap -> {
-            // Phase 2 wires the Decision Engine onto this. Phase 1 just logs at DEBUG.
+            // Phase 1 troubleshooting line — operators rely on it; do not remove.
             if (LOG.isDebugEnabled()) {
                 LOG.debug("indicator snapshot symbol={} timestamp={}", snap.symbol(), snap.timestamp());
+            }
+            for (java.util.function.Consumer<IndicatorSnapshot> listener : additionalSnapshotListeners) {
+                try {
+                    listener.accept(snap);
+                } catch (RuntimeException e) {
+                    LOG.warn(
+                            "additional snapshot listener {} threw: {}",
+                            listener.getClass().getName(),
+                            e.toString());
+                }
             }
         };
         this.indicatorEngine = new IndicatorEngine(symbol, snapSink);
@@ -432,5 +453,18 @@ public class LivePipeline {
     public void registerBarListener(BarListener listener) {
         Objects.requireNonNull(listener, "listener");
         additionalBarListeners.add(listener);
+    }
+
+    /**
+     * Register an additional indicator-snapshot listener for the fan-out path. Thread-safe —
+     * listeners may be added at startup (via {@link StartupEvent} observers) or later. The
+     * built-in DEBUG log line always fires first; registered listeners are invoked in
+     * registration order. Per-listener exceptions are logged and swallowed so one failing
+     * sink (e.g. a Kafka publish failure that escapes the emitter's own catch) cannot block
+     * the indicator engine or the other subscribers.
+     */
+    public void registerSnapshotListener(java.util.function.Consumer<IndicatorSnapshot> listener) {
+        Objects.requireNonNull(listener, "listener");
+        additionalSnapshotListeners.add(listener);
     }
 }

@@ -40,9 +40,10 @@ import org.slf4j.LoggerFactory;
  * the log. Quarkus's outgoing channel buffers internally, so transient broker hiccups
  * do not stall bar production.
  *
- * <p>Indicators and levels are NOT published in this PR — the architecture-spec §12.1
- * topic table doesn't list them; Phase 2 Decision Engine reads levels from MS SQL
- * {@code daily_state} directly and consumes indicator snapshots in-process.
+ * <p>Indicators are published by sibling {@link IndicatorSnapshotEmitter} to
+ * {@code market.indicators.2m} — see architecture-spec §12.1. Levels are still consumed
+ * in-process by the Decision Engine in Phase 2 (read from MS SQL {@code daily_state}
+ * directly); no level topic exists.
  */
 @ApplicationScoped
 @UnlessBuildProfile("prod")

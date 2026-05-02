@@ -1,8 +1,10 @@
 # LevelSweepAgent — Architecture Specification
 
-**Version**: 2.4
+**Version**: 2.5
 **Companion to**: `requirements.md` v1.0
 **Status**: Locked for Phase A (single-tenant); Phase B gated on legal review
+
+**v2.5 changelog**: §12.1 — added `market.indicators.2m` Kafka topic (key `symbol`, 8 partitions, 7d retention). Decision Engine now consumes computed `IndicatorSnapshot` records from market-data-service over Kafka (closes the producer/consumer gap that left `IndicatorSnapshotHolder` empty in dev); also a prerequisite for Phase 3 S4-S5 (Stop Watcher / Trail Manager).
 
 **v2.4 changelog**: Alpaca is now the single market-data + execution provider (per ADR-0004). Polygon removed from the codebase. WS endpoint changes to `wss://stream.data.alpaca.markets/v2/sip` for stocks; options chain via REST `/v1beta1/options/snapshots/{underlying}`. Trail manager (Phase 3) uses 1s REST polling as a default; OPRA WS is a deferred upgrade if soak shows ratchet misses. Cost projection updated: ~$99/mo Alpaca Algo Trader Plus replaces ~$199/mo Polygon Stocks Advanced.
 
@@ -532,6 +534,7 @@ The Trade Saga is **stateless across requests** but **stateful per saga instance
 | `market.bars.15m` | `symbol` | 4 | 30d | Aggregated |
 | `market.bars.daily` | `symbol` | 4 | 365d | Daily history |
 | `market.atr.daily` | `symbol` | 4 | 365d | Computed ATR |
+| `market.indicators.2m` | `symbol` | 8 | 7d | Computed indicator snapshots, per 2m bar close |
 | `tenant.signals` | `tenant_id` | 16 | 90d | All signal evaluations |
 | `tenant.commands` | `tenant_id` | 16 | 7d | Decision Engine → Execution |
 | `tenant.fills` | `tenant_id` | 16 | 365d | Alpaca → all listeners |

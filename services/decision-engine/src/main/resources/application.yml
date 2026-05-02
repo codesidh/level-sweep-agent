@@ -113,6 +113,17 @@ mp:
         auto.offset.reset: latest
         key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
         value.deserializer: com.levelsweep.decision.ingest.BarDeserializer
+      # Indicator snapshot topic — architecture-spec §12.1. Populates
+      # IndicatorSnapshotHolder so SignalEvaluator can score live bars instead
+      # of skipping them with reason "no_indicators". Phase 3 S4-S5 (Stop Watcher /
+      # Trail Manager) also subscribe for §9 trigger evaluation.
+      indicators-2m:
+        connector: smallrye-kafka
+        topic: market.indicators.2m
+        group.id: decision-engine
+        auto.offset.reset: latest
+        key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+        value.deserializer: com.levelsweep.decision.ingest.IndicatorSnapshotDeserializer
     outgoing:
       # Trade Saga → Kafka bridge. The saga fires CDI Event<TradeProposed>;
       # TradeProposedKafkaPublisher (an @Observes adapter) relays each event
@@ -194,6 +205,8 @@ tenant:
           connector: smallrye-in-memory
         bars-daily:
           connector: smallrye-in-memory
+        indicators-2m:
+          connector: smallrye-in-memory
       outgoing:
         # Belt-and-braces: TradeProposedKafkaPublisher is @UnlessBuildProfile("prod")
         # so the bean (and the @Channel injection point) is absent in %prod, but
@@ -234,6 +247,8 @@ tenant:
         bars-15m:
           connector: smallrye-in-memory
         bars-daily:
+          connector: smallrye-in-memory
+        indicators-2m:
           connector: smallrye-in-memory
       outgoing:
         # @QuarkusTest swap so the saga's TradeProposedKafkaPublisher injects a
