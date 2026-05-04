@@ -12,7 +12,12 @@ name: pr
 
 on:
   pull_request:
-    branches: [main]
+    # CLAUDE.md guardrail #8 (scope-gated soak) parks scope-failing work on
+    # `staging/<phase>` long-lived branches with full CI but no main merge
+    # until the relevant soak clears. Trigger pr.yml on those branches too
+    # so multi-PR Phase 5+ work gets the same lint / build / test gates as
+    # main-targeting PRs.
+    branches: [main, "staging/**"]
     # Top-level paths-ignore is intentionally minimal — most filtering happens
     # per-job below. Anything matched here causes the workflow to not even
     # start, which is the right behavior for files no job touches.
