@@ -176,6 +176,92 @@ class AiAgentMetricsTest {
         assertThatNullPointerException()
                 .isThrownBy(() -> metrics.recordConnectionState(null, ConnectionMonitor.State.HEALTHY));
         assertThatNullPointerException().isThrownBy(() -> metrics.recordConnectionState("anthropic", null));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelAllow(null, "PDH", "explicit_allow"));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelAllow(TENANT, null, "explicit_allow"));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelAllow(TENANT, "PDH", null));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelVetoApplied(null, "PDH"));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelVetoApplied(TENANT, null));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelFallback(null, "timeout"));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelFallback(TENANT, null));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelSkipped(null, "flag_off"));
+        assertThatNullPointerException().isThrownBy(() -> metrics.sentinelSkipped(TENANT, null));
+    }
+
+    // ---------- Phase 5 / S3 — Sentinel meters (ADR-0007 §3 + §6) ----------
+
+    @Test
+    void sentinelAllow_incrementsCounterTaggedByTenantLevelDecisionPath() {
+        metrics.sentinelAllow(TENANT, "PDH", "explicit_allow");
+        metrics.sentinelAllow(TENANT, "PDH", "explicit_allow");
+        metrics.sentinelAllow(TENANT, "PDH", "low_confidence_veto_overridden");
+        metrics.sentinelAllow(TENANT, "PDL", "fallback_allow");
+
+        double explicit = registry.find(AiAgentMetrics.METER_SENTINEL_ALLOW)
+                .tag("tenant_id", TENANT)
+                .tag("level_swept", "PDH")
+                .tag("decision_path", "explicit_allow")
+                .counter()
+                .count();
+        double overridden = registry.find(AiAgentMetrics.METER_SENTINEL_ALLOW)
+                .tag("tenant_id", TENANT)
+                .tag("level_swept", "PDH")
+                .tag("decision_path", "low_confidence_veto_overridden")
+                .counter()
+                .count();
+        double fallbackPdl = registry.find(AiAgentMetrics.METER_SENTINEL_ALLOW)
+                .tag("tenant_id", TENANT)
+                .tag("level_swept", "PDL")
+                .tag("decision_path", "fallback_allow")
+                .counter()
+                .count();
+        assertThat(explicit).isEqualTo(2.0d);
+        assertThat(overridden).isEqualTo(1.0d);
+        assertThat(fallbackPdl).isEqualTo(1.0d);
+    }
+
+    @Test
+    void sentinelVetoApplied_incrementsCounterTaggedByTenantLevel() {
+        metrics.sentinelVetoApplied(TENANT, "PMH");
+        metrics.sentinelVetoApplied(TENANT, "PMH");
+
+        double count = registry.find(AiAgentMetrics.METER_SENTINEL_VETO_APPLIED)
+                .tag("tenant_id", TENANT)
+                .tag("level_swept", "PMH")
+                .counter()
+                .count();
+        assertThat(count).isEqualTo(2.0d);
+    }
+
+    @Test
+    void sentinelFallback_incrementsCounterPerReasonLabel() {
+        metrics.sentinelFallback(TENANT, "transport");
+        metrics.sentinelFallback(TENANT, "rate_limit");
+        metrics.sentinelFallback(TENANT, "cost_cap");
+        metrics.sentinelFallback(TENANT, "parse");
+        metrics.sentinelFallback(TENANT, "timeout");
+        metrics.sentinelFallback(TENANT, "cb_open");
+
+        for (String reason : new String[] {"transport", "rate_limit", "cost_cap", "parse", "timeout", "cb_open"}) {
+            double count = registry.find(AiAgentMetrics.METER_SENTINEL_FALLBACK)
+                    .tag("tenant_id", TENANT)
+                    .tag("reason", reason)
+                    .counter()
+                    .count();
+            assertThat(count).as("fallback{reason=%s}", reason).isEqualTo(1.0d);
+        }
+    }
+
+    @Test
+    void sentinelSkipped_incrementsCounterTaggedByTenantReason() {
+        metrics.sentinelSkipped(TENANT, "flag_off");
+        metrics.sentinelSkipped(TENANT, "flag_off");
+
+        double count = registry.find(AiAgentMetrics.METER_SENTINEL_SKIPPED)
+                .tag("tenant_id", TENANT)
+                .tag("reason", "flag_off")
+                .counter()
+                .count();
+        assertThat(count).isEqualTo(2.0d);
     }
 
     @Test

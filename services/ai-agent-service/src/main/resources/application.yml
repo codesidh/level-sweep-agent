@@ -127,6 +127,12 @@ levelsweep:
       - trace_id
       - ai_role
       - signal_id
+  # Phase 5 S3 — Pre-Trade Sentinel feature flag (ADR-0007 §7). Defaults OFF
+  # until Phase 4 soak (5+ RTH sessions on real Anthropic) clears; once ON,
+  # the saga issues a synchronous Sentinel call between RiskGate and
+  # StrikeSelector with a 750ms hard timeout (fail-OPEN).
+  sentinel:
+    enabled: ${LEVELSWEEP_SENTINEL_ENABLED:false}
 
 # Test profile — Quarkus dev-services would otherwise try to spin up Mongo
 # (and any other auto-discovered backend) in CI. Disable so unit tests run
