@@ -28,12 +28,15 @@ image:
   tag: "latest"
   pullPolicy: IfNotPresent
 
-# Phase 6 single-instance per architecture-spec §16. Multi-replica + leader
-# election arrives in Phase 7; the cold-path CRUD store is fine on a single
-# replica — Phase A throughput is "one PUT per config edit" (operator action,
-# not per-trade). Reads are higher volume but still small (Decision Engine
-# pulls flags + risk params on each signal eval, ~ once per 15-min bar).
-replicas: 1
+# Phase 6 dev: replicas=0 because MS SQL is not deployed in the dev cluster —
+# Flyway crashes the pod on boot trying to acquire a JDBC connection. Phase 7
+# provisions Azure SQL (architecture-spec §13.1) and bumps this back to 1.
+# Multi-replica + leader election arrives in Phase 7; the cold-path CRUD
+# store is fine on a single replica — Phase A throughput is "one PUT per
+# config edit" (operator action, not per-trade). Reads are higher volume but
+# still small (Decision Engine pulls flags + risk params on each signal eval,
+# ~ once per 15-min bar).
+replicas: 0
 
 # Deployment strategy. Phase 6 dev is the same 2-node cluster used by
 # Phase 1+3+4+6-journal; Recreate avoids the RollingUpdate deadlock where a
