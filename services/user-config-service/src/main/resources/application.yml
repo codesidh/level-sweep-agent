@@ -1,47 +1,116 @@
+# =============================================================================
+# user-config-service — Spring Boot 3.x cold-path configuration.
+#
+# Overrides resolved in this order (Spring Boot 3.x):
+#   1) application.yml (this file) — defaults
+#   2) application-{profile}.yml — per-profile (loaded by spring.profiles.active)
+#   3) The trailing `---` document below — activated only under the `test` profile
+#
+# Per architecture-spec §13.1 MS SQL is the system of record for financial
+# state, including tenant_config (alongside tenants, users, daily_state, trades,
+# orders, positions, fills, risk_events, fsm_transitions, agent_decisions).
+# Flyway-managed schema; pure JdbcTemplate access. No JPA, no Spring Data JDBC
+# repositories.
+# =============================================================================
 spring:
   application:
     name: user-config-service
-  main:
-    banner-mode: off
   datasource:
+    # Phase 6 dev points at the in-cluster MS SQL deployment (the same target
+    # used by execution-service for eod_flatten_attempts). Phase 7 swaps to
+    # Azure SQL via private endpoint per architecture-spec §13.1. encrypt=false
+    # is the dev-only setting; prod's connection string carries encrypt=true
+    # plus the trustServerCertificate=false strict TLS posture.
     url: "${MSSQL_URL:jdbc:sqlserver://localhost:1433;databaseName=level_sweep;encrypt=false}"
     username: "${MSSQL_USER:sa}"
     password: "${MSSQL_PASSWORD:LevelSweep!2026}"
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
   flyway:
-    enabled: false # enable in Phase 6
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: "${AUTH0_ISSUER:https://example.auth0.com/}"
-          audiences:
-            - "${AUTH0_AUDIENCE:https://api.levelsweep.local}"
+    # Enabled by default — production migrates the schema on pod startup,
+    # before the OwnerSeed runs (OwnerSeed listens on ApplicationReadyEvent
+    # which fires after Flyway completes).
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
 
 server:
-  port: 8090
+  # Phase 6 port allocation (per architecture-spec §9 service map):
+  #   8081 — market-data-service       (Quarkus)
+  #   8082 — decision-engine           (Quarkus)
+  #   8083 — execution-service         (Quarkus)
+  #   8084 — ai-agent-service          (Quarkus)
+  #   8085 — journal-service           (Spring Boot)
+  #   8086 — user-config-service       (Spring Boot, this file)
+  port: 8086
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # Prometheus scrape + K8s liveness/readiness probes both pull off
+        # /actuator. Health probes are split out below.
+        include: health, info, metrics, prometheus
   endpoint:
     health:
       probes:
         enabled: true
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    db:
+      # Spring Boot's DataSourceHealthIndicator pings the configured DataSource
+      # on every readiness probe. K8s pulls the pod out of service rotation
+      # when MS SQL is unreachable so the BFF / Decision Engine stop hitting
+      # a service that can't serve.
+      enabled: true
+
+levelsweep:
+  tenant:
+    # OwnerSeed bootstraps a tenant_config row for this id on first start
+    # (Phase A: single-user owner per CLAUDE.md guardrail #1).
+    bootstrap-id: OWNER
 
 logging:
   level:
     root: INFO
     com.levelsweep: INFO
-  # MDC keys mandatory per architecture-spec §18.3 + multi-tenant-readiness skill.
-  pattern:
-    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-},user_id=%X{user_id:-}]'
+    # Flyway is INFO at startup which is exactly what we want for the
+    # migration log; framework-level Spring JDBC noise we don't.
+    org.springframework.jdbc.core.JdbcTemplate: WARN
 
-levelsweep:
-  tenant:
-    bootstrap-id: OWNER
-  feature-flags:
-    phase-b-multi-tenant-onboarding: false
-    phase-b-public-signup: false
+---
+# =============================================================================
+# %test profile — disables Flyway and points the DataSource at a deliberately-
+# fake host so unit tests never touch a real MS SQL instance. All tests are
+# pure Mockito over JdbcTemplate / @WebMvcTest slices.
+#
+# The DataSourceHealthIndicator is excluded so a slice test that boots only
+# the controller layer doesn't fail readiness because the DataSource isn't
+# a real connection.
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: "jdbc:sqlserver://test-not-a-real-host:1433;databaseName=test_level_sweep;encrypt=false"
+    username: "sa"
+    password: "test"
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    # Hikari must NOT eagerly establish a connection in the test profile —
+    # there is no real DB to connect to. `initialization-fail-timeout: -1`
+    # tells Hikari to skip the startup-time validation probe and only fail
+    # when an actual query is attempted (none are; tests mock the
+    # JdbcTemplate).
+    hikari:
+      initialization-fail-timeout: -1
+  flyway:
+    enabled: false
+  autoconfigure:
+    # Skip the DB health indicator under the test profile — the DataSource
+    # is unreachable by design.
+    exclude:
+      - org.springframework.boot.actuate.autoconfigure.jdbc.DataSourceHealthContributorAutoConfiguration

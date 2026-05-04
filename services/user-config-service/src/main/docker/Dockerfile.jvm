@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# user-config-service — JVM-mode (Spring Boot fat-jar) container.
+#
+# Native-image is intentionally NOT on the Phase 7 plan for cold-path Spring
+# Boot services per CLAUDE.md tech stack — only the Quarkus hot-path services
+# get the GraalVM treatment. The Spring Boot fat jar runs on
+# eclipse-temurin:21-jre Alpine.
+#
+# App Insights agent (microsoft/ApplicationInsights-Java) is downloaded at
+# image-build time and attached via -javaagent. The agent reads
+# APPLICATIONINSIGHTS_CONNECTION_STRING at runtime and ships traces / metrics /
+# logs to Application Insights. It also auto-instruments JDBC, HTTP, JVM
+# internals, and SLF4J/Logback — for free.
+# =============================================================================
+FROM eclipse-temurin:21-jre-alpine AS runtime
+
+# Run as non-root (matches the AKS pod-security-standard "restricted" profile
+# we'll target in Phase 7). Same UID/GID as journal-service / ai-agent-service
+# so the `runAsUser: 100` / `fsGroup: 100` from the Helm values aligns with
+# the image's user.
+RUN addgroup -S app && adduser -S app -G app -h /work
+WORKDIR /work
+
+# -----------------------------------------------------------------------------
+# Application Insights Java agent. Pinned to a real GitHub release tag — same
+# version as the other Phase 6 cold-path services; bump in lockstep across
+# all services when a security advisory drops. The agent jar is ~30 MB.
+# -----------------------------------------------------------------------------
+ARG APPLICATIONINSIGHTS_AGENT_VERSION=3.7.8
+ADD --chown=app:app \
+    https://github.com/microsoft/ApplicationInsights-Java/releases/download/${APPLICATIONINSIGHTS_AGENT_VERSION}/applicationinsights-agent-${APPLICATIONINSIGHTS_AGENT_VERSION}.jar \
+    /work/applicationinsights-agent.jar
+
+USER app
+
+# Spring Boot fat-jar layout. Gradle's bootJar task produces a single jar
+# under build/libs/. Filename includes the version
+# (`user-config-service-0.1.0-SNAPSHOT.jar`); the wildcard COPY + rename keeps
+# the Dockerfile insensitive to version bumps.
+COPY --chown=app:app build/libs/user-config-service-*.jar /work/app.jar
+
+EXPOSE 8086
+
+# JAVA_OPTS_APPEND lets the operator add flags (e.g., GC tuning) without
+# rebuilding. The App Insights -javaagent is appended unconditionally; if
+# APPLICATIONINSIGHTS_CONNECTION_STRING is unset (local dev / tests), the
+# agent self-disables with a startup log line and adds no overhead beyond load.
+ENV LANG=C.UTF-8 \
+    JAVA_OPTS_APPEND="-XX:+ExitOnOutOfMemoryError -javaagent:/work/applicationinsights-agent.jar"
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS_APPEND -jar /work/app.jar"]

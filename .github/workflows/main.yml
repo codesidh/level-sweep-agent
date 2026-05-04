@@ -636,6 +636,20 @@ jobs:
   # ---------------------------------------------------------------------------
   containers-calendar-service:
     name: containers (calendar-service)
+  # Container build + Trivy scan + push (Phase 6: user-config-service). Mirrors
+  # the journal-service container job — same OIDC + ACR + GHCR + Buildx flow,
+  # gated per-service by dorny/paths-filter so changes that don't touch
+  # user-config-service don't rebuild this image. Native-image is NOT on the
+  # Phase 7 plan for cold-path Spring Boot — the fat-jar Dockerfile is the
+  # steady state.
+  #
+  # Build difference vs. the Quarkus services: this job invokes :bootJar
+  # (Spring Boot Gradle plugin) instead of :quarkusBuild. The output lands
+  # at build/libs/user-config-service-*.jar, which Dockerfile.jvm COPYs in
+  # directly — no fast-jar layout, no quarkus-run.jar wrapper.
+  # ---------------------------------------------------------------------------
+  containers-user-config-service:
+    name: containers (user-config-service)
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 30
@@ -652,6 +666,8 @@ jobs:
           filters: |
             calendar:
               - 'services/calendar-service/**'
+            user_config:
+              - 'services/user-config-service/**'
               - 'shared/**'
               - 'gradle/**'
               - 'gradlew'
@@ -664,6 +680,10 @@ jobs:
 
       - name: Set up JDK 21
         if: steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch'
+              - 'deploy/helm/user-config-service/**'
+
+      - name: Set up JDK 21
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -671,6 +691,7 @@ jobs:
 
       - name: Set up Gradle
         if: steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
@@ -685,6 +706,15 @@ jobs:
 
       - name: Log in to GHCR
         if: steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
+        run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin
+
+      - name: Assemble user-config-service fat-jar
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
+        run: ./gradlew :services:user-config-service:bootJar --no-daemon
+
+      - name: Log in to GHCR
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -693,6 +723,7 @@ jobs:
 
       - name: Azure login (OIDC)
         if: (steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_LOGIN_SERVER != ''
+        if: (steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_LOGIN_SERVER != ''
         uses: azure/login@v2
         env:
           ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
@@ -703,6 +734,7 @@ jobs:
 
       - name: ACR login
         if: (steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_NAME != ''
+        if: (steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_NAME != ''
         env:
           ACR_NAME: ${{ secrets.ACR_NAME }}
         run: az acr login --name "${ACR_NAME}"
@@ -713,6 +745,11 @@ jobs:
 
       - name: Compute image tags
         if: steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image tags
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
         id: tags
         env:
           ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
@@ -720,6 +757,7 @@ jobs:
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
           GHCR_BASE="ghcr.io/${OWNER}/${REPO}/calendar-service"
+          GHCR_BASE="ghcr.io/${OWNER}/${REPO}/user-config-service"
           echo "ghcr_base=${GHCR_BASE}" >> "$GITHUB_OUTPUT"
           echo "ghcr_sha=${GHCR_BASE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "ghcr_latest=${GHCR_BASE}:latest" >> "$GITHUB_OUTPUT"
@@ -730,6 +768,8 @@ jobs:
             if [ -n "${ACR_LOGIN_SERVER}" ]; then
               echo "${ACR_LOGIN_SERVER}/calendar-service:${GITHUB_SHA}"
               echo "${ACR_LOGIN_SERVER}/calendar-service:latest"
+              echo "${ACR_LOGIN_SERVER}/user-config-service:${GITHUB_SHA}"
+              echo "${ACR_LOGIN_SERVER}/user-config-service:latest"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -740,6 +780,11 @@ jobs:
         with:
           context: services/calendar-service
           file: services/calendar-service/src/main/docker/Dockerfile.jvm
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/user-config-service
+          file: services/user-config-service/src/main/docker/Dockerfile.jvm
           push: true
           tags: ${{ steps.tags.outputs.all_tags }}
           cache-from: type=gha
@@ -747,6 +792,7 @@ jobs:
 
       - name: Trivy scan image
         if: steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.tags.outputs.ghcr_sha }}
