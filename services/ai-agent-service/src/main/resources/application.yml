@@ -63,7 +63,10 @@ anthropic:
     assistant: "claude-sonnet-4-6"
     reviewer: "claude-opus-4-7"
   cost-cap-usd-per-tenant-per-day:
-    sentinel: 1.00
+    # Sentinel cap per ADR-0007 §6 — Haiku 4.5 is the cheapest tier so $0.50
+    # absorbs ~5,000 calls/day at typical token sizes (well above the expected
+    # ≤ 5 trades/day per tenant).
+    sentinel: 0.50
     narrator: 1.00
     assistant: 5.00
     reviewer: 2.00
