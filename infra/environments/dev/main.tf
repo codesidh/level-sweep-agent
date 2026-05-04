@@ -271,12 +271,25 @@ resource "azurerm_federated_identity_credential" "calendar_service_sa" {
 # size once decision-engine + remaining cold-path Spring services land.
 resource "azurerm_federated_identity_credential" "user_config_service_sa" {
   name                = "fc-${var.project}-${local.environment}-user-config-service"
+# Phase 6: notification-service (cold-path Spring Boot 3.x) binds to the
+# same kubelet MI via its own federated credential. Subject must match the
+# deploy-dev.yml `--namespace` + ServiceAccount name produced by the Helm
+# chart (`system:serviceaccount:notification-service:notification-service`).
+# Same footprint as journal-service — 200m CPU / 512 MiB requests — and
+# fits in the existing 2 × Standard_D2s_v4 cluster (~4 GiB used across all
+# Phase 6 cold-path service pods of 16 GiB available). Phase 7 splits this
+# off into a dedicated per-service workload MI alongside the other services
+# AND revisits the node-pool size once decision-engine and the remaining
+# cold-path Spring services land.
+resource "azurerm_federated_identity_credential" "notification_service_sa" {
+  name                = "fc-${var.project}-${local.environment}-notification-service"
   resource_group_name = module.aks.cluster_resource_group
   parent_id           = module.aks.kubelet_user_assigned_identity_id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = module.aks.oidc_issuer_url
   subject             = "system:serviceaccount:calendar-service:calendar-service"
   subject             = "system:serviceaccount:user-config-service:user-config-service"
+  subject             = "system:serviceaccount:notification-service:notification-service"
 }
 
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {

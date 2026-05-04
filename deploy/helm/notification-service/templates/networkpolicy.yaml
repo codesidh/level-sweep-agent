@@ -1,0 +1,84 @@
+{{- if .Values.networkPolicy.enabled }}
+# =============================================================================
+# Phase 6 NetworkPolicy. Mirrors the journal-service pattern with one
+# important addition — egress to SMTP (port 587 / 465 / 25) is permitted
+# anywhere on TCP because the relay is external (Phase A: codesidh@gmail.com
+# via Gmail SMTP). Phase 7 narrows this to a per-FQDN allowlist via
+# Calico's networkpolicy DNS resolver.
+#
+# Ingress: HTTP from anywhere in the same namespace (Actuator probes).
+# Phase 7 narrows this to only the BFF SA via `from.podSelector` once the
+# BFF is deployed.
+#
+# Egress:
+#   - DNS to kube-system (kube-dns)
+#   - HTTPS anywhere (App Insights ingest, KV CSI driver, Twilio in Phase 7)
+#   - Same-ns Kafka (9092) and Mongo (27017)
+#   - SMTP egress on 587 (STARTTLS), 465 (SMTPS), 25 (legacy) anywhere — the
+#     relay (Gmail / SendGrid / etc.) is on the public internet.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "notification-service.fullname" . }}
+  labels:
+    {{- include "notification-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "notification-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - port: {{ .Values.service.port }}
+          protocol: TCP
+  egress:
+    # DNS — kube-dns lives in kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # HTTPS to anywhere — KV CSI driver, App Insights ingest, Phase 7 Twilio.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+    # SMTP egress — Phase A external relay (codesidh@gmail.com / Gmail SMTP).
+    # Phase 7 narrows to a per-FQDN allowlist.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 587
+          protocol: TCP
+        - port: 465
+          protocol: TCP
+        - port: 25
+          protocol: TCP
+    # Kafka brokers + Mongo on intra-cluster service ports — the Phase 6
+    # Strimzi cluster + dev Mongo live in this same namespace once they
+    # land, so allow same-ns egress on the relevant ports without
+    # overcommitting the policy.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - port: 9092
+          protocol: TCP
+        - port: 27017
+          protocol: TCP
+{{- end }}

@@ -650,6 +650,20 @@ jobs:
   # ---------------------------------------------------------------------------
   containers-user-config-service:
     name: containers (user-config-service)
+  # Container build + Trivy scan + push (Phase 6: notification-service).
+  # Mirrors the journal-service container job — same OIDC + ACR + GHCR +
+  # Buildx flow, gated per-service by dorny/paths-filter so changes that
+  # don't touch notification-service don't rebuild this image. Native-image
+  # is NOT on the Phase 7 plan for cold-path Spring Boot — the fat-jar
+  # Dockerfile is the steady state.
+  #
+  # Build difference vs. the Quarkus services: this job invokes :bootJar
+  # (Spring Boot Gradle plugin) instead of :quarkusBuild. The output lands
+  # at build/libs/notification-service-*.jar, which Dockerfile.jvm COPYs
+  # in directly — no fast-jar layout, no quarkus-run.jar wrapper.
+  # ---------------------------------------------------------------------------
+  containers-notification-service:
+    name: containers (notification-service)
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 30
@@ -668,6 +682,8 @@ jobs:
               - 'services/calendar-service/**'
             user_config:
               - 'services/user-config-service/**'
+            notification:
+              - 'services/notification-service/**'
               - 'shared/**'
               - 'gradle/**'
               - 'gradlew'
@@ -684,6 +700,10 @@ jobs:
 
       - name: Set up JDK 21
         if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
+              - 'deploy/helm/notification-service/**'
+
+      - name: Set up JDK 21
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -715,6 +735,26 @@ jobs:
 
       - name: Log in to GHCR
         if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Pin to 8.10.2 to match the wrapper. Quarkus 3.15.1 plugin is not
+          # yet compatible with Gradle 9.x — the build is monorepo so even
+          # cold-path Spring Boot services share the wrapper version.
+          gradle-version: 8.10.2
+
+      - name: Bootstrap Gradle wrapper jar
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
+        run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin
+
+      # bootJar produces the Spring Boot fat jar under build/libs/ without
+      # re-running the test suite (already covered by the `build` job).
+      - name: Assemble notification-service fat-jar
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
+        run: ./gradlew :services:notification-service:bootJar --no-daemon
+
+      - name: Log in to GHCR
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -724,6 +764,7 @@ jobs:
       - name: Azure login (OIDC)
         if: (steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_LOGIN_SERVER != ''
         if: (steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_LOGIN_SERVER != ''
+        if: (steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_LOGIN_SERVER != ''
         uses: azure/login@v2
         env:
           ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
@@ -735,6 +776,7 @@ jobs:
       - name: ACR login
         if: (steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_NAME != ''
         if: (steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_NAME != ''
+        if: (steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_NAME != ''
         env:
           ACR_NAME: ${{ secrets.ACR_NAME }}
         run: az acr login --name "${ACR_NAME}"
@@ -750,6 +792,11 @@ jobs:
 
       - name: Compute image tags
         if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image tags
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
         id: tags
         env:
           ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
@@ -758,6 +805,7 @@ jobs:
           REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
           GHCR_BASE="ghcr.io/${OWNER}/${REPO}/calendar-service"
           GHCR_BASE="ghcr.io/${OWNER}/${REPO}/user-config-service"
+          GHCR_BASE="ghcr.io/${OWNER}/${REPO}/notification-service"
           echo "ghcr_base=${GHCR_BASE}" >> "$GITHUB_OUTPUT"
           echo "ghcr_sha=${GHCR_BASE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "ghcr_latest=${GHCR_BASE}:latest" >> "$GITHUB_OUTPUT"
@@ -770,6 +818,8 @@ jobs:
               echo "${ACR_LOGIN_SERVER}/calendar-service:latest"
               echo "${ACR_LOGIN_SERVER}/user-config-service:${GITHUB_SHA}"
               echo "${ACR_LOGIN_SERVER}/user-config-service:latest"
+              echo "${ACR_LOGIN_SERVER}/notification-service:${GITHUB_SHA}"
+              echo "${ACR_LOGIN_SERVER}/notification-service:latest"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -785,6 +835,11 @@ jobs:
         with:
           context: services/user-config-service
           file: services/user-config-service/src/main/docker/Dockerfile.jvm
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/notification-service
+          file: services/notification-service/src/main/docker/Dockerfile.jvm
           push: true
           tags: ${{ steps.tags.outputs.all_tags }}
           cache-from: type=gha
@@ -793,6 +848,7 @@ jobs:
       - name: Trivy scan image
         if: steps.filter.outputs.calendar == 'true' || github.event_name == 'workflow_dispatch'
         if: steps.filter.outputs.user_config == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.filter.outputs.notification == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.tags.outputs.ghcr_sha }}

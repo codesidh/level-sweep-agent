@@ -1,3 +1,17 @@
+# =============================================================================
+# notification-service — Spring Boot 3.x cold-path configuration.
+#
+# Per architecture-spec §6 the notification delivery profile is AP:
+# eventually-delivered, deduplicated by consumer. auto-offset-reset=earliest so
+# a freshly deployed pod replays the per-tenant queue from oldest in retention
+# (7d per architecture-spec §12.1). The Mongo outbox unique index dedupes
+# duplicate redeliveries idempotently.
+#
+# Phase 6 SMTP: when spring.mail.host is empty, EmailDispatcher logs-only and
+# records a SKIPPED outbox row — useful for dev clusters that don't yet have
+# an SMTP relay. SMTP credentials in production flow via Key Vault (mounted
+# as env vars by the Helm chart's CSI provider).
+# =============================================================================
 spring:
   application:
     name: notification-service
@@ -5,42 +19,134 @@ spring:
     banner-mode: off
   data:
     mongodb:
-      uri: "${MONGO_URL:mongodb://localhost:27017}"
-      database: "${MONGO_DB:level_sweep}"
+      uri: ${MONGO_URL:mongodb://localhost:27017/level_sweep}
+      database: ${MONGO_DB:level_sweep}
   kafka:
-    bootstrap-servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: notification-service
+      # AP §6: notifications are eventually delivered. earliest replays the
+      # per-tenant queue from oldest in retention so a fresh pod doesn't
+      # silently miss alerts emitted while it was scheduling.
       auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # JsonDeserializer requires an explicit allowlist to prevent RCE via
+        # a crafted payload; we trust only domain types from this codebase.
+        spring.json.trusted.packages: com.levelsweep.shared.domain.*
+        spring.json.use.type.headers: false
+  mail:
+    # SMTP host is empty by default — EmailDispatcher logs-only when blank
+    # so dev clusters without a relay never block on connect timeouts.
+    # Production sets this via the Helm chart's KV-mounted env vars.
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    # spring.mail.from-address is a bespoke key consumed by EmailDispatcher
+    # via @Value — Spring's auto-config doesn't read it, but @Value resolves
+    # it the same way as any other property. Default is a non-routable
+    # placeholder so a misconfig surfaces quickly.
+    from-address: ${EMAIL_FROM:noreply@levelsweep.local}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+        # Connection + IO timeouts so a flaky relay doesn't pin the
+        # listener thread. AP profile tolerates a missed alert; we'd
+        # rather record a FAILED outbox row and move on.
+        smtps:
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 server:
-  port: 8093
+  port: 8087
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health, info, metrics, prometheus
   endpoint:
     health:
       probes:
         enabled: true
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    mongo:
+      enabled: true
+    mail:
+      # Don't fail readiness on SMTP — the service degrades to log-only
+      # when the relay is down, and the outbox still records the SKIPPED/
+      # FAILED rows. Marking readiness false would pull the pod from the
+      # service and stop us from consuming Kafka entirely.
+      enabled: false
 
-logging:
-  level:
-    root: INFO
-    com.levelsweep: INFO
-  pattern:
-    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-}]'
+# Application-level config namespace.
+notification:
+  kafka:
+    # Toggle the listener on/off. Default true so the consumer auto-starts
+    # and idles harmlessly until producers ship. Operators flip this off
+    # in dev clusters that don't have Kafka deployed yet.
+    enabled: true
 
 levelsweep:
   tenant:
     bootstrap-id: OWNER
   notifications:
-    telegram:
-      bot-token: "${TELEGRAM_BOT_TOKEN:}"
-      chat-id: "${TELEGRAM_CHAT_ID:}"
     email:
-      smtp-host: "${SMTP_HOST:}"
-      smtp-port: "${SMTP_PORT:587}"
-      from: "${EMAIL_FROM:}"
+      # Phase A: configured for the owner's mailbox per project memory.
+      # Empty default — EmailDispatcher logs-only when blank.
+      to: ${EMAIL_TO:}
+
+logging:
+  level:
+    root: INFO
+    com.levelsweep: INFO
+    # Spring Kafka's container is chatty at INFO during partition rebalances.
+    org.springframework.kafka.listener: WARN
+    org.apache.kafka.clients.consumer: WARN
+  pattern:
+    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-}]'
+
+---
+# =============================================================================
+# %test profile — disables Kafka + Mongo + SMTP so unit tests never touch a
+# real external dependency. Pure POJO + Mockito only (no testcontainers in
+# Phase 6 per the constraints).
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: test
+  kafka:
+    bootstrap-servers: ""
+  data:
+    mongodb:
+      uri: mongodb://test-not-a-real-host:27017/test_level_sweep
+      database: test_level_sweep
+  mail:
+    host: ""
+    port: 587
+  autoconfigure:
+    # Skip the Mongo + Mail health indicators under the test profile so a
+    # slice test that boots only one bean doesn't fail readiness because
+    # MongoTemplate / JavaMailSender isn't a real connection.
+    exclude:
+      - org.springframework.boot.actuate.autoconfigure.data.mongo.MongoHealthContributorAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.data.mongo.MongoReactiveHealthContributorAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.mail.MailHealthContributorAutoConfiguration
+
+notification:
+  kafka:
+    # Off in tests so the listener container doesn't try to connect on boot.
+    enabled: false

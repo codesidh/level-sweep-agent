@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# notification-service — JVM-mode (Spring Boot fat-jar) container.
+#
+# Mirrors journal-service's Dockerfile.jvm one-for-one — same eclipse-temurin
+# base, same App Insights agent attach, same non-root UID/GID, same fat-jar
+# layout. Only the EXPOSE port (8087) and the COPY pattern are service-
+# specific.
+#
+# Native-image is intentionally NOT on the Phase 7 plan for cold-path Spring
+# Boot services per CLAUDE.md tech stack — only the Quarkus hot-path services
+# get the GraalVM treatment.
+# =============================================================================
+FROM eclipse-temurin:21-jre-alpine AS runtime
+
+# Run as non-root (matches the AKS pod-security-standard "restricted" profile
+# we'll target in Phase 7). Same UID/GID as the other Phase 6 cold-path
+# services so the `runAsUser: 100` / `fsGroup: 100` from the Helm values
+# aligns with the image's user.
+RUN addgroup -S app && adduser -S app -G app -h /work
+WORKDIR /work
+
+# -----------------------------------------------------------------------------
+# Application Insights Java agent. Pinned to the same release tag used by
+# journal-service so a single supply-chain advisory bumps both in lockstep.
+# The agent jar is ~30 MB.
+# -----------------------------------------------------------------------------
+ARG APPLICATIONINSIGHTS_AGENT_VERSION=3.7.8
+ADD --chown=app:app \
+    https://github.com/microsoft/ApplicationInsights-Java/releases/download/${APPLICATIONINSIGHTS_AGENT_VERSION}/applicationinsights-agent-${APPLICATIONINSIGHTS_AGENT_VERSION}.jar \
+    /work/applicationinsights-agent.jar
+
+USER app
+
+# Spring Boot fat-jar layout. Gradle's bootJar task produces a single jar
+# under build/libs/. Filename includes the version
+# (`notification-service-0.1.0-SNAPSHOT.jar`); the wildcard COPY + rename
+# keeps the Dockerfile insensitive to version bumps.
+COPY --chown=app:app build/libs/notification-service-*.jar /work/app.jar
+
+EXPOSE 8087
+
+# JAVA_OPTS_APPEND lets the operator add flags (e.g., GC tuning) without
+# rebuilding. The App Insights -javaagent is appended unconditionally; if
+# APPLICATIONINSIGHTS_CONNECTION_STRING is unset (local dev / tests), the
+# agent self-disables with a startup log line and adds no overhead beyond load.
+ENV LANG=C.UTF-8 \
+    JAVA_OPTS_APPEND="-XX:+ExitOnOutOfMemoryError -javaagent:/work/applicationinsights-agent.jar"
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS_APPEND -jar /work/app.jar"]
