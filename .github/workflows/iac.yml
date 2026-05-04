@@ -156,4 +156,13 @@ jobs:
 
       - name: terraform apply
         working-directory: infra/environments/${{ github.event.inputs.environment || 'dev' }}
+        env:
+          # `terraform.tfvars` is gitignored (per repo convention — tenant_id
+          # is per-deployment data, not source). Pass required vars via
+          # TF_VAR_* env so Terraform can read them at apply time.
+          # AZURE_TENANT_ID is already a repo / env secret used by azure/login.
+          # ALERT_EMAIL is the email Phase 1 alerts page; empty falls back to
+          # the variable default (alerts still create but route to no one).
+          TF_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: terraform apply -auto-approve -input=false
