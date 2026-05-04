@@ -1,0 +1,6 @@
+apiVersion: v2
+name: calendar-service
+description: Phase 6 Calendar Service — cold-path NYSE-holiday + FOMC calendar (Spring Boot 3.x). Stateless reference data; serves GET /calendar/today, /calendar/{date}, /calendar/blackout-dates.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

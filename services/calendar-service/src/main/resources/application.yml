@@ -1,25 +1,53 @@
+# =============================================================================
+# calendar-service — Spring Boot 3.x cold-path configuration.
+#
+# Per architecture-spec §9 the Calendar Service is Tier 2 cold; pure read-only
+# in-memory service. No Mongo, no Kafka, no MS SQL — the dataset is small
+# (< 100 entries across 5 years) and loaded from YAML resources at startup.
+# Re-loading is on pod restart only; static data has no other refresh path
+# in Phase 6.
+#
+# Port 8088 mirrors the cold-path service port allocation (market-data 8083,
+# decision-engine 8084, journal 8085, projection 8086, user-config 8087,
+# calendar 8088, notification 8089, api-gateway-bff 8090). Phase 7 may move
+# everything behind APIM and the per-service port becomes irrelevant.
+# =============================================================================
 spring:
   application:
     name: calendar-service
   main:
     banner-mode: off
-  data:
-    mongodb:
-      uri: "${MONGO_URL:mongodb://localhost:27017}"
-      database: "${MONGO_DB:level_sweep}"
 
 server:
-  port: 8092
+  port: 8088
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # Prometheus scrape + K8s liveness/readiness probes both pull off
+        # /actuator. Health probes are split out below.
+        include: health, info, metrics, prometheus
   endpoint:
     health:
       probes:
         enabled: true
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+# Calendar resource paths — overridable so tests can point at fixtures.
+calendar:
+  resource:
+    holidays: calendar/nyse-holidays-2026-2030.yml
+    fomc: calendar/fomc-2026-2030.yml
+
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
 
 logging:
   level:
@@ -27,9 +55,3 @@ logging:
     com.levelsweep: INFO
   pattern:
     correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-}]'
-
-levelsweep:
-  tenant:
-    bootstrap-id: OWNER
-  trading-economics:
-    api-key: "${TRADING_ECONOMICS_API_KEY:}"

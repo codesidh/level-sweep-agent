@@ -243,6 +243,28 @@ resource "azurerm_federated_identity_credential" "journal_service_sa" {
   subject             = "system:serviceaccount:journal-service:journal-service"
 }
 
+# Phase 6: calendar-service (cold-path Spring Boot 3.x trading-calendar).
+# Subject must match the deploy-dev.yml `--namespace` + ServiceAccount name
+# produced by the Helm chart (`system:serviceaccount:calendar-service:calendar-service`).
+# The service runs at 100m CPU / 256 MiB requests — the lightest pod in the
+# topology (no Mongo, no Kafka, no MS SQL, no external API) — so the existing
+# 2 × Standard_D2s_v4 dev cluster has the headroom (~3.75 GiB used across
+# all five service pods of 16 GiB available; calendar adds ~256 MiB).
+#
+# No Key Vault objects mounted today (the calendar has no secrets), so the
+# federated credential exists only for forward-compat with a Phase 7
+# economic-calendar API integration. The shared kubelet KV-Secrets-User
+# role-assignment below covers calendar-service automatically when/if it
+# needs to read a KV secret.
+resource "azurerm_federated_identity_credential" "calendar_service_sa" {
+  name                = "fc-${var.project}-${local.environment}-calendar-service"
+  resource_group_name = module.aks.cluster_resource_group
+  parent_id           = module.aks.kubelet_user_assigned_identity_id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = module.aks.oidc_issuer_url
+  subject             = "system:serviceaccount:calendar-service:calendar-service"
+}
+
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
   scope                = module.keyvault.kv_id
   role_definition_name = "Key Vault Secrets User"

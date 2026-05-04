@@ -1,0 +1,131 @@
+# =============================================================================
+# FOMC Schedule, 2026 - 2030.
+#
+# Source: federalreserve.gov/monetarypolicy/fomccalendars.htm. The FOMC
+# publishes a 2-year-forward calendar; 2026 is firm. 2027-2030 are projected
+# from the FOMC's standard 8-meetings-per-year cadence (late Jan, mid Mar,
+# late Apr / early May, mid Jun, late Jul, mid Sep, early Nov, mid Dec). When
+# the Federal Reserve publishes firm 2027+ dates, this file is the single
+# place to update — operators sync it via PR, no API call.
+#
+# WHY HARD-CODED: same rationale as the NYSE holiday file. The schedule is
+# announced 12-24 months in advance, releases are at scheduled times (statement
+# 14:00 ET, presser 14:30 ET on day-2 of two-day meetings), and missing one
+# would surface as a known-issue alert long before it affected trading.
+#
+# Convention: only the SECOND day of a two-day meeting is recorded as
+# {@code FOMC_MEETING} (that's the day the statement releases and Powell
+# speaks; the first day has no public release and is irrelevant for the
+# Session FSM blackout window).
+#
+# Minutes are released ~3 weeks (Wednesday) after each meeting. The exact
+# release date is published with the meeting minutes; until that's confirmed
+# we use the standard +21-day Wednesday rule, hand-verified against the 2026
+# FOMC calendar.
+#
+# Schema:
+#   meetings:        list of { date, name }            FOMC statement day
+#   minutes:         list of { date, name }            FOMC minutes release
+# =============================================================================
+
+meetings:
+  # ---- 2026 (firm — from federalreserve.gov 2025-published schedule) ----
+  - { date: "2026-01-28", name: "FOMC Meeting (Jan)" }
+  - { date: "2026-03-18", name: "FOMC Meeting (Mar)" }
+  - { date: "2026-04-29", name: "FOMC Meeting (Apr)" }
+  - { date: "2026-06-17", name: "FOMC Meeting (Jun)" }
+  - { date: "2026-07-29", name: "FOMC Meeting (Jul)" }
+  - { date: "2026-09-16", name: "FOMC Meeting (Sep)" }
+  - { date: "2026-10-28", name: "FOMC Meeting (Oct)" }
+  - { date: "2026-12-09", name: "FOMC Meeting (Dec)" }
+
+  # ---- 2027 (projected — typical late-month-of-quarter pattern) ----
+  - { date: "2027-01-27", name: "FOMC Meeting (Jan)" }
+  - { date: "2027-03-17", name: "FOMC Meeting (Mar)" }
+  - { date: "2027-04-28", name: "FOMC Meeting (Apr)" }
+  - { date: "2027-06-16", name: "FOMC Meeting (Jun)" }
+  - { date: "2027-07-28", name: "FOMC Meeting (Jul)" }
+  - { date: "2027-09-22", name: "FOMC Meeting (Sep)" }
+  - { date: "2027-11-03", name: "FOMC Meeting (Nov)" }
+  - { date: "2027-12-15", name: "FOMC Meeting (Dec)" }
+
+  # ---- 2028 (projected) ----
+  - { date: "2028-01-26", name: "FOMC Meeting (Jan)" }
+  - { date: "2028-03-15", name: "FOMC Meeting (Mar)" }
+  - { date: "2028-05-03", name: "FOMC Meeting (May)" }
+  - { date: "2028-06-14", name: "FOMC Meeting (Jun)" }
+  - { date: "2028-07-26", name: "FOMC Meeting (Jul)" }
+  - { date: "2028-09-20", name: "FOMC Meeting (Sep)" }
+  - { date: "2028-11-01", name: "FOMC Meeting (Nov)" }
+  - { date: "2028-12-13", name: "FOMC Meeting (Dec)" }
+
+  # ---- 2029 (projected) ----
+  - { date: "2029-01-31", name: "FOMC Meeting (Jan)" }
+  - { date: "2029-03-21", name: "FOMC Meeting (Mar)" }
+  - { date: "2029-05-02", name: "FOMC Meeting (May)" }
+  - { date: "2029-06-13", name: "FOMC Meeting (Jun)" }
+  - { date: "2029-08-01", name: "FOMC Meeting (Jul)" }
+  - { date: "2029-09-19", name: "FOMC Meeting (Sep)" }
+  - { date: "2029-10-31", name: "FOMC Meeting (Oct)" }
+  - { date: "2029-12-12", name: "FOMC Meeting (Dec)" }
+
+  # ---- 2030 (projected) ----
+  - { date: "2030-01-30", name: "FOMC Meeting (Jan)" }
+  - { date: "2030-03-20", name: "FOMC Meeting (Mar)" }
+  - { date: "2030-05-01", name: "FOMC Meeting (May)" }
+  - { date: "2030-06-19", name: "FOMC Meeting (Jun)" }
+  - { date: "2030-07-31", name: "FOMC Meeting (Jul)" }
+  - { date: "2030-09-18", name: "FOMC Meeting (Sep)" }
+  - { date: "2030-10-30", name: "FOMC Meeting (Oct)" }
+  - { date: "2030-12-11", name: "FOMC Meeting (Dec)" }
+
+minutes:
+  # ---- 2026 (firm — FOMC publishes minutes ~3 weeks after each meeting) ----
+  - { date: "2026-02-18", name: "FOMC Minutes (Jan)" }
+  - { date: "2026-04-08", name: "FOMC Minutes (Mar)" }
+  - { date: "2026-05-20", name: "FOMC Minutes (Apr)" }
+  - { date: "2026-07-08", name: "FOMC Minutes (Jun)" }
+  - { date: "2026-08-19", name: "FOMC Minutes (Jul)" }
+  - { date: "2026-10-07", name: "FOMC Minutes (Sep)" }
+  - { date: "2026-11-18", name: "FOMC Minutes (Oct)" }
+  - { date: "2026-12-30", name: "FOMC Minutes (Dec)" }
+
+  # ---- 2027 (projected — meeting + 3 weeks Wednesday) ----
+  - { date: "2027-02-17", name: "FOMC Minutes (Jan)" }
+  - { date: "2027-04-07", name: "FOMC Minutes (Mar)" }
+  - { date: "2027-05-19", name: "FOMC Minutes (Apr)" }
+  - { date: "2027-07-07", name: "FOMC Minutes (Jun)" }
+  - { date: "2027-08-18", name: "FOMC Minutes (Jul)" }
+  - { date: "2027-10-13", name: "FOMC Minutes (Sep)" }
+  - { date: "2027-11-24", name: "FOMC Minutes (Nov)" }
+  - { date: "2028-01-05", name: "FOMC Minutes (Dec 2027)" }
+
+  # ---- 2028 (projected) ----
+  - { date: "2028-02-16", name: "FOMC Minutes (Jan)" }
+  - { date: "2028-04-05", name: "FOMC Minutes (Mar)" }
+  - { date: "2028-05-24", name: "FOMC Minutes (May)" }
+  - { date: "2028-07-05", name: "FOMC Minutes (Jun)" }
+  - { date: "2028-08-16", name: "FOMC Minutes (Jul)" }
+  - { date: "2028-10-11", name: "FOMC Minutes (Sep)" }
+  - { date: "2028-11-22", name: "FOMC Minutes (Nov)" }
+  - { date: "2029-01-03", name: "FOMC Minutes (Dec 2028)" }
+
+  # ---- 2029 (projected) ----
+  - { date: "2029-02-21", name: "FOMC Minutes (Jan)" }
+  - { date: "2029-04-11", name: "FOMC Minutes (Mar)" }
+  - { date: "2029-05-23", name: "FOMC Minutes (May)" }
+  - { date: "2029-07-04", name: "FOMC Minutes (Jun)" }
+  - { date: "2029-08-22", name: "FOMC Minutes (Jul)" }
+  - { date: "2029-10-10", name: "FOMC Minutes (Sep)" }
+  - { date: "2029-11-21", name: "FOMC Minutes (Oct)" }
+  - { date: "2030-01-02", name: "FOMC Minutes (Dec 2029)" }
+
+  # ---- 2030 (projected) ----
+  - { date: "2030-02-20", name: "FOMC Minutes (Jan)" }
+  - { date: "2030-04-10", name: "FOMC Minutes (Mar)" }
+  - { date: "2030-05-22", name: "FOMC Minutes (May)" }
+  - { date: "2030-07-10", name: "FOMC Minutes (Jun)" }
+  - { date: "2030-08-21", name: "FOMC Minutes (Jul)" }
+  - { date: "2030-10-09", name: "FOMC Minutes (Sep)" }
+  - { date: "2030-11-20", name: "FOMC Minutes (Oct)" }
+  - { date: "2031-01-01", name: "FOMC Minutes (Dec 2030)" }

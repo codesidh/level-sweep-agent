@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "calendar-service.fullname" . }}
+  labels:
+    {{- include "calendar-service.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "calendar-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    # Phase 6 dev: same 2-node cluster topology as the other services. Recreate
+    # is the simpler choice for a single-replica reference-data service —
+    # ~5s downtime per rollout is fine for a calendar that downstream
+    # callers cache anyway. Phase 7 production scales this to 2+ replicas
+    # and switches to RollingUpdate.
+    type: {{ .Values.deployment.strategy | default "Recreate" }}
+    {{- if eq (.Values.deployment.strategy | default "Recreate") "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.deployment.maxSurge | default 1 }}
+      maxUnavailable: {{ .Values.deployment.maxUnavailable | default 0 }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "calendar-service.selectorLabels" . | nindent 8 }}
+        {{- if .Values.workloadIdentity.enabled }}
+        # Required for the Azure Workload Identity webhook to inject the
+        # projected SA token + AZURE_* env into the pod. Today the calendar
+        # has no KV objects to read, but the SA + federation are still wired
+        # so a Phase 7 economic-calendar-API integration plugs in cleanly.
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "calendar-service.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: calendar-service
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          volumeMounts:
+            # Spring Boot needs a writable scratch dir; readOnlyRootFilesystem
+            # blocks /tmp by default.
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.readiness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 100
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}
