@@ -1,0 +1,33 @@
+{
+  "name": "parse_fallback",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_010",
+    "signal_id": "SIG_REPLAY_010",
+    "direction": "LONG_CALL",
+    "level_swept": "PMH",
+    "indicator_snapshot": {
+      "ema13": "502.0000",
+      "ema48": "501.0000",
+      "ema200": "498.0000",
+      "atr14": "1.15",
+      "rsi2": "62.00",
+      "regime": "BULL",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:33:00Z", "close": "502.0000", "volume": 9500 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "502.5000", "volume": 9800 }
+      ]
+    },
+    "recent_trades_window": [],
+    "vix_close_prev": "13.80",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 200,
+    "body": "{\"id\":\"msg_replay_010\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"this is not valid sentinel json output\"}],\"usage\":{\"input_tokens\":410,\"output_tokens\":12,\"cache_read_input_tokens\":0}}"
+  },
+  "expected": {
+    "type": "Fallback",
+    "fallback_reason": "PARSE"
+  }
+}

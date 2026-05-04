@@ -1,0 +1,39 @@
+{
+  "name": "pdl_long_put_explicit_allow",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_002",
+    "signal_id": "SIG_REPLAY_002",
+    "direction": "LONG_PUT",
+    "level_swept": "PDL",
+    "indicator_snapshot": {
+      "ema13": "488.7500",
+      "ema48": "490.2000",
+      "ema200": "494.5000",
+      "atr14": "1.35",
+      "rsi2": "28.40",
+      "regime": "BEAR",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:31:00Z", "close": "489.5000", "volume": 10200 },
+        { "ts": "2026-05-04T13:33:00Z", "close": "488.7500", "volume": 11800 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "488.2500", "volume": 13100 }
+      ]
+    },
+    "recent_trades_window": [
+      { "trade_id": "TR_PRIOR_010", "outcome": "WIN", "r_multiple": "2.0", "ts": "2026-05-04T13:05:00Z" }
+    ],
+    "vix_close_prev": "16.80",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 200,
+    "body": "{\"id\":\"msg_replay_002\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"ALLOW\\\",\\\"confidence\\\":0.72,\\\"reason_code\\\":\\\"STRUCTURE_MATCH\\\",\\\"reason_text\\\":\\\"PDL sweep with bearish regime confirmed; momentum aligned.\\\"}\"}],\"usage\":{\"input_tokens\":418,\"output_tokens\":40,\"cache_read_input_tokens\":0}}"
+  },
+  "expected": {
+    "type": "Allow",
+    "decision_path": "EXPLICIT_ALLOW",
+    "confidence": "0.72",
+    "reason_code": "STRUCTURE_MATCH",
+    "reason_text": "PDL sweep with bearish regime confirmed; momentum aligned."
+  }
+}

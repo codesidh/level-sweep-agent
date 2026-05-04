@@ -1,0 +1,37 @@
+{
+  "name": "pmh_long_call_explicit_allow",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_003",
+    "signal_id": "SIG_REPLAY_003",
+    "direction": "LONG_CALL",
+    "level_swept": "PMH",
+    "indicator_snapshot": {
+      "ema13": "503.1500",
+      "ema48": "501.8500",
+      "ema200": "498.7500",
+      "atr14": "1.10",
+      "rsi2": "61.20",
+      "regime": "BULL",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:31:00Z", "close": "502.7500", "volume": 8900 },
+        { "ts": "2026-05-04T13:33:00Z", "close": "503.0000", "volume": 9700 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "503.5000", "volume": 10400 }
+      ]
+    },
+    "recent_trades_window": [],
+    "vix_close_prev": "13.20",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 200,
+    "body": "{\"id\":\"msg_replay_003\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"ALLOW\\\",\\\"confidence\\\":0.68,\\\"reason_code\\\":\\\"STRUCTURE_MATCH\\\",\\\"reason_text\\\":\\\"Pre-market high sweep with low VIX environment; momentum continuation.\\\"}\"}],\"usage\":{\"input_tokens\":410,\"output_tokens\":45,\"cache_read_input_tokens\":0}}"
+  },
+  "expected": {
+    "type": "Allow",
+    "decision_path": "EXPLICIT_ALLOW",
+    "confidence": "0.68",
+    "reason_code": "STRUCTURE_MATCH",
+    "reason_text": "Pre-market high sweep with low VIX environment; momentum continuation."
+  }
+}
