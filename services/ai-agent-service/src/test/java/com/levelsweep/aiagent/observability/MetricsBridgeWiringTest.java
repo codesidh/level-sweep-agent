@@ -112,15 +112,11 @@ class MetricsBridgeWiringTest {
 
         AnthropicClient client = mock(AnthropicClient.class);
         when(client.submit(any(AnthropicRequest.class), anyBoolean()))
-                .thenReturn(new AnthropicResponse.RateLimited("req-1", Role.NARRATOR, "claude-sonnet-4-6", 100L, "rate"));
+                .thenReturn(
+                        new AnthropicResponse.RateLimited("req-1", Role.NARRATOR, "claude-sonnet-4-6", 100L, "rate"));
 
         TradeNarrator narrator = new TradeNarrator(
-                client,
-                tracker,
-                mock(AiCallAuditWriter.class),
-                metrics,
-                Clock.fixed(NOW, ET),
-                "claude-sonnet-4-6");
+                client, tracker, mock(AiCallAuditWriter.class), metrics, Clock.fixed(NOW, ET), "claude-sonnet-4-6");
 
         narrator.narrate(new NarrationRequest(
                 TENANT, NarrationPromptBuilder.EVENT_FILL, "contract=SPY 2026-05-02 100 C", TRADE_ID, NOW));
@@ -156,12 +152,7 @@ class MetricsBridgeWiringTest {
                         new BigDecimal("0.0035")));
 
         TradeNarrator narrator = new TradeNarrator(
-                client,
-                tracker,
-                mock(AiCallAuditWriter.class),
-                metrics,
-                Clock.fixed(NOW, ET),
-                "claude-sonnet-4-6");
+                client, tracker, mock(AiCallAuditWriter.class), metrics, Clock.fixed(NOW, ET), "claude-sonnet-4-6");
 
         Optional<?> result = narrator.narrate(new NarrationRequest(
                 TENANT, NarrationPromptBuilder.EVENT_FILL, "contract=SPY 2026-05-02 100 C", TRADE_ID, NOW));

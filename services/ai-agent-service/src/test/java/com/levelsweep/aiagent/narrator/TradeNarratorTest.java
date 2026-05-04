@@ -69,8 +69,8 @@ class TradeNarratorTest {
 
     @BeforeEach
     void setUp() {
-        narrator = new TradeNarrator(
-                anthropicClient, costTracker, auditWriter, AiAgentMetrics.noop(), FIXED_CLOCK, MODEL);
+        narrator =
+                new TradeNarrator(anthropicClient, costTracker, auditWriter, AiAgentMetrics.noop(), FIXED_CLOCK, MODEL);
         // Default: ample budget, never blocked.
         when(costTracker.today()).thenReturn(LocalDate.of(2026, 5, 2));
         // wouldExceedCap default → false. We pin per-test when we need true.
