@@ -1,3 +1,16 @@
+# =============================================================================
+# projection-service — Spring Boot 3.x cold-path configuration.
+#
+# Overrides resolved in this order (Spring Boot 3.x):
+#   1) application.yml (this file) — defaults
+#   2) application-{profile}.yml — per-profile (loaded by spring.profiles.active)
+#   3) The trailing `---` document below — activated only under the `test` profile
+#
+# Per architecture-spec §9 the Projection Service is Tier 2 cold-path; per
+# requirements.md §22 #4 the dashboard's default projection horizon is the
+# 12-month backtest window for SPY 0DTE. The Monte Carlo math is pure Java; the
+# only external dependency is Mongo for caching run results.
+# =============================================================================
 spring:
   application:
     name: projection-service
@@ -5,21 +18,49 @@ spring:
     banner-mode: off
   data:
     mongodb:
-      uri: "${MONGO_URL:mongodb://localhost:27017}"
-      database: "${MONGO_DB:level_sweep}"
+      uri: ${MONGO_URL:mongodb://localhost:27017/level_sweep}
+      database: ${MONGO_DB:level_sweep}
 
 server:
-  port: 8091
+  # Phase 6 port allocation (per architecture-spec §9 service map):
+  #   8081 — market-data-service       (Quarkus)
+  #   8082 — decision-engine           (Quarkus)
+  #   8083 — execution-service         (Quarkus)
+  #   8084 — ai-agent-service          (Quarkus)
+  #   8085 — journal-service           (Spring Boot)
+  #   8086 — user-config-service       (Spring Boot)
+  #   8087 — calendar-service          (Spring Boot)
+  #   8088 — notification-service      (Spring Boot)
+  #   8089 — projection-service        (Spring Boot, this file)
+  port: 8089
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # Prometheus scrape + K8s liveness/readiness probes both pull off
+        # /actuator. Health probes are split out below.
+        include: health, info, metrics, prometheus
   endpoint:
     health:
       probes:
         enabled: true
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    mongo:
+      # Spring Boot Actuator's MongoHealthIndicator is built-in; pings the
+      # Mongo deployment on every readiness probe. K8s pulls the pod out of
+      # service when Mongo is unreachable instead of letting it serve a
+      # request whose result it cannot persist.
+      enabled: true
+
+levelsweep:
+  tenant:
+    bootstrap-id: OWNER
 
 logging:
   level:
@@ -28,6 +69,30 @@ logging:
   pattern:
     correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-}]'
 
-levelsweep:
-  tenant:
-    bootstrap-id: OWNER
+---
+# =============================================================================
+# %test profile — points the Mongo URI at a deliberately-fake host so unit
+# tests never touch a real Mongo instance. Pure POJO + Mockito + @WebMvcTest
+# only (no testcontainers in Phase 6 per the constraints).
+#
+# Spring Boot's auto-configured MongoAutoConfiguration is still loaded by the
+# slice tests, but the test code mocks its beans (MongoTemplate,
+# ProjectionRunRepository) before they're invoked. Pointing the Mongo URI at
+# a deliberately-fake host means even an accidental real call fails fast with
+# a connection refused, surfacing the missing mock.
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: test
+  data:
+    mongodb:
+      uri: mongodb://test-not-a-real-host:27017/test_level_sweep
+      database: test_level_sweep
+  autoconfigure:
+    # Skip the Mongo health indicator under the test profile so a slice test
+    # that boots only the controller layer doesn't fail readiness because
+    # MongoTemplate isn't a real connection.
+    exclude:
+      - org.springframework.boot.actuate.autoconfigure.data.mongo.MongoHealthContributorAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.data.mongo.MongoReactiveHealthContributorAutoConfiguration

@@ -785,3 +785,108 @@ jobs:
           echo "::group::logs"
           kubectl -n notification-service logs -l app.kubernetes.io/name=notification-service --tail=200 --all-containers || true
           echo "::endgroup::"
+
+  # ---------------------------------------------------------------------------
+  # Phase 6 — projection-service deploy. Mirrors the user-config-service job
+  # above. Lives in its own namespace `projection-service` so a failed deploy
+  # of one service does not block the others. The federated-identity binding
+  # for the SA
+  #   system:serviceaccount:projection-service:projection-service
+  # is created by `infra/environments/dev/main.tf` →
+  # azurerm_federated_identity_credential.projection_service_sa, which must
+  # be applied by iac.yml before this job runs successfully against a fresh
+  # cluster.
+  #
+  # KV objects mounted: applicationinsights-connection-string (already
+  # mirrored from Phase 1 bootstrap; optional). No secrets required for
+  # Phase 6 dev — the in-cluster Mongo URL is plain-text in env. Phase 7
+  # swaps in managed Cosmos / MongoDB Atlas per architecture-spec §13.2 and
+  # adds a mongo-url KV mount.
+  # ---------------------------------------------------------------------------
+  deploy-projection-service:
+    name: deploy projection-service to dev
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+
+    steps:
+      # On workflow_run, checkout defaults to the default branch tip — pin to
+      # the head_sha that main.yml just built so the chart and the image are
+      # in lockstep.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Install kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.1.4
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
+
+      - name: Resolve image tag SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "value=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Helm upgrade --install
+        run: |
+          helm upgrade --install projection-service deploy/helm/projection-service \
+            --namespace projection-service \
+            --create-namespace \
+            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/projection-service" \
+            --set image.tag="${{ steps.sha.outputs.value }}" \
+            --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
+            --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+            --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
+            --set keyVault.vaultUri="${{ secrets.KEY_VAULT_URI }}" \
+            --set appInsights.connectionStringSecretName=applicationinsights-connection-string \
+            --wait \
+            --timeout 5m
+
+      - name: Verify rollout
+        run: |
+          kubectl -n projection-service rollout status deployment/projection-service --timeout=5m
+          kubectl -n projection-service get pods,svc
+
+      - name: Dump pod state on failure (projection-service)
+        if: failure()
+        run: |
+          echo "::group::nodes"
+          kubectl get nodes -o wide || true
+          echo "::endgroup::"
+          echo "::group::pods"
+          kubectl -n projection-service get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n projection-service describe pods -l app.kubernetes.io/name=projection-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n projection-service get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n projection-service logs -l app.kubernetes.io/name=projection-service --tail=200 --all-containers || true
+          echo "::endgroup::"
