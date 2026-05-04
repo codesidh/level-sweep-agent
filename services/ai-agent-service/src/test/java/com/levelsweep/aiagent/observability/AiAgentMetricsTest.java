@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.levelsweep.aiagent.anthropic.AnthropicRequest.Role;
+import com.levelsweep.aiagent.connection.ConnectionMonitor;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
@@ -172,5 +173,71 @@ class AiAgentMetricsTest {
         assertThatNullPointerException()
                 .isThrownBy(() -> metrics.reviewerRunComplete(null, AiAgentMetrics.ReviewerRunOutcome.COMPLETED));
         assertThatNullPointerException().isThrownBy(() -> metrics.reviewerRunComplete(TENANT, null));
+        assertThatNullPointerException()
+                .isThrownBy(() -> metrics.recordConnectionState(null, ConnectionMonitor.State.HEALTHY));
+        assertThatNullPointerException().isThrownBy(() -> metrics.recordConnectionState("anthropic", null));
+    }
+
+    @Test
+    void recordConnectionStateRegistersGaugePerDependency() {
+        metrics.recordConnectionState("anthropic", ConnectionMonitor.State.HEALTHY);
+
+        Double value = registry.find(AiAgentMetrics.METER_CONNECTION_STATE)
+                .tag("dependency", "anthropic")
+                .gauge()
+                .value();
+        assertThat(value).isEqualTo(0.0d);
+    }
+
+    @Test
+    void recordConnectionStateMutatesExistingGaugeOnSecondCall() {
+        metrics.recordConnectionState("anthropic", ConnectionMonitor.State.HEALTHY);
+        metrics.recordConnectionState("anthropic", ConnectionMonitor.State.UNHEALTHY);
+
+        Double value = registry.find(AiAgentMetrics.METER_CONNECTION_STATE)
+                .tag("dependency", "anthropic")
+                .gauge()
+                .value();
+        assertThat(value).isEqualTo(2.0d);
+
+        // Single registered gauge for this dependency — second update did not
+        // register a duplicate.
+        long matchingGauges = registry.getMeters().stream()
+                .filter(m -> m.getId().getName().equals(AiAgentMetrics.METER_CONNECTION_STATE))
+                .filter(m -> "anthropic".equals(m.getId().getTag("dependency")))
+                .count();
+        assertThat(matchingGauges).isEqualTo(1);
+    }
+
+    @Test
+    void recordConnectionStateOrdinalMappingMatchesAlertContract() {
+        // HEALTHY=0, DEGRADED=1, UNHEALTHY=2, RECOVERING=3 — alert #11 fires at value >= 2.
+        metrics.recordConnectionState("anthropic", ConnectionMonitor.State.HEALTHY);
+        assertThat(gaugeValue("anthropic")).isEqualTo(0.0d);
+
+        metrics.recordConnectionState("anthropic", ConnectionMonitor.State.DEGRADED);
+        assertThat(gaugeValue("anthropic")).isEqualTo(1.0d);
+
+        metrics.recordConnectionState("anthropic", ConnectionMonitor.State.UNHEALTHY);
+        assertThat(gaugeValue("anthropic")).isEqualTo(2.0d);
+
+        metrics.recordConnectionState("anthropic", ConnectionMonitor.State.RECOVERING);
+        assertThat(gaugeValue("anthropic")).isEqualTo(3.0d);
+    }
+
+    @Test
+    void recordConnectionStateScopesGaugeByDependency() {
+        metrics.recordConnectionState("anthropic", ConnectionMonitor.State.HEALTHY);
+        metrics.recordConnectionState("alpaca-stocks", ConnectionMonitor.State.UNHEALTHY);
+
+        assertThat(gaugeValue("anthropic")).isEqualTo(0.0d);
+        assertThat(gaugeValue("alpaca-stocks")).isEqualTo(2.0d);
+    }
+
+    private double gaugeValue(String dependency) {
+        return registry.find(AiAgentMetrics.METER_CONNECTION_STATE)
+                .tag("dependency", dependency)
+                .gauge()
+                .value();
     }
 }
