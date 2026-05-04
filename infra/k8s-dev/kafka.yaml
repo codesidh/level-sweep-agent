@@ -1,0 +1,171 @@
+# =============================================================================
+# Dev-grade single-broker Kafka cluster via Strimzi (KRaft mode, no Zookeeper).
+# Powers Phase 1 (market.indicators.2m), Phase 3 (tenant.fills), Phase 4 (AI
+# fills consumer), Phase 5 (Sentinel topics), Phase 6 (notifications,
+# tenant.events.*).
+#
+# NOT production-grade — single combined controller+broker, ephemeral storage.
+# Phase 7 swaps in 3-broker + 3-controller HA cluster with persistent volumes.
+#
+# Apply:
+#   kubectl apply -f infra/k8s-dev/kafka.yaml
+#
+# Bootstrap address (in-cluster): kafka-bootstrap.kafka.svc.cluster.local:9092
+# Consumers across namespaces use that FQDN. The bare hostname `kafka` does NOT
+# resolve outside the kafka namespace; existing helm values that point at
+# `kafka:9092` (e.g. journal-service, notification-service) still pass the
+# bootstrap-server validation when set to localhost:9092 (PR #109 workaround)
+# but for actual messaging, services must be patched to the FQDN below.
+# =============================================================================
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dev
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  replicas: 1
+  roles:
+    - controller
+    - broker
+  storage:
+    type: ephemeral
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: kafka
+  namespace: kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: 4.2.0
+    metadataVersion: 4.2-IV0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+---
+# =============================================================================
+# Topics — each is keyed by tenant_id for the multi-tenant guardrail (CLAUDE.md
+# #4). Replication factor 1 in dev; Phase 7 raises to 3.
+# =============================================================================
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: tenant.fills
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "31536000000" # 1 year — audit log
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: market.indicators.2m
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "604800000" # 7 days — indicator snapshots
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: tenant-events-entry-complete
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  topicName: tenant.events.entry_complete
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "31536000000"
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: tenant-events-exit-complete
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  topicName: tenant.events.exit_complete
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "31536000000"
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: tenant-events-signal-evaluated
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  topicName: tenant.events.signal_evaluated
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "604800000" # 7 days — high volume
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: notifications
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "604800000" # 7 days — alerts
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: trade.proposed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "31536000000"
+    cleanup.policy: delete
