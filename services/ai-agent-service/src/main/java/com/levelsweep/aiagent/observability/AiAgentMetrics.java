@@ -1,6 +1,7 @@
 package com.levelsweep.aiagent.observability;
 
 import com.levelsweep.aiagent.anthropic.AnthropicRequest.Role;
+import com.levelsweep.aiagent.connection.ConnectionMonitor;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,6 +90,16 @@ public class AiAgentMetrics {
     public static final String METER_NARRATOR_FIRED = "ai.narrator.fired";
     public static final String METER_REVIEWER_RUN_COMPLETE = "ai.reviewer.run.complete";
 
+    /**
+     * Connection FSM gauge — per-dependency lifecycle state ordinal. The Phase 5
+     * S1 alert {@code anthropic_cb_unhealthy} (alert #11) keys off
+     * {@code customMetrics.connection_state} where
+     * {@code customDimensions.dependency == "anthropic"} and {@code value >= 2}.
+     * Phase 1 / Phase 3 use the same name for their own dependencies, so the
+     * dimension is the routing key.
+     */
+    public static final String METER_CONNECTION_STATE = "connection.state";
+
     private final MeterRegistry registry;
 
     /**
@@ -97,6 +109,13 @@ public class AiAgentMetrics {
      * registration does not GC it.
      */
     private final ConcurrentHashMap<CostKey, AtomicReference<BigDecimal>> costRefs = new ConcurrentHashMap<>();
+
+    /**
+     * Per-dependency Connection FSM ordinal holder. Same per-key
+     * {@link AtomicInteger} pattern as {@link #costRefs} — register the gauge
+     * once per dependency, mutate the ref on subsequent observations.
+     */
+    private final ConcurrentHashMap<String, AtomicInteger> connectionStateRefs = new ConcurrentHashMap<>();
 
     @Inject
     public AiAgentMetrics(MeterRegistry registry) {
@@ -150,6 +169,35 @@ public class AiAgentMetrics {
             return r;
         });
         ref.set(currentSpendUsd);
+    }
+
+    /**
+     * Update the per-dependency Connection FSM gauge. Called from the FSM
+     * wrapper (e.g.
+     * {@link com.levelsweep.aiagent.connection.AnthropicConnectionMonitor})
+     * whenever the underlying state transitions. Value is the ordinal:
+     * HEALTHY=0, DEGRADED=1, UNHEALTHY=2, RECOVERING=3 — matches the alert KQL
+     * threshold {@code value >= 2}.
+     *
+     * <p>Same per-key gauge-registration pattern as {@link #recordCostUpdate}:
+     * {@link AtomicInteger} held strongly in {@link #connectionStateRefs} so
+     * Micrometer's weak ref does not GC it; gauge registered exactly once per
+     * dependency.
+     */
+    public void recordConnectionState(String dependency, ConnectionMonitor.State state) {
+        Objects.requireNonNull(dependency, "dependency");
+        Objects.requireNonNull(state, "state");
+
+        AtomicInteger ref = connectionStateRefs.computeIfAbsent(dependency, k -> {
+            AtomicInteger r = new AtomicInteger(state.ordinal());
+            Gauge.builder(METER_CONNECTION_STATE, r, AtomicInteger::get)
+                    .description(
+                            "Per-dependency Connection FSM ordinal: HEALTHY=0, DEGRADED=1, UNHEALTHY=2, RECOVERING=3.")
+                    .tags(Tags.of("dependency", k))
+                    .register(registry);
+            return r;
+        });
+        ref.set(state.ordinal());
     }
 
     /** Increment the narrator-skipped counter. {@code reason} is one of the labels in {@link NarratorSkipReason}. */

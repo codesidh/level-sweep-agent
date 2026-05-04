@@ -11,7 +11,9 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.levelsweep.aiagent.anthropic.AnthropicRequest.Role;
+import com.levelsweep.aiagent.connection.AnthropicConnectionMonitor;
 import com.levelsweep.aiagent.cost.DailyCostTracker;
+import com.levelsweep.aiagent.observability.AiAgentMetrics;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.http.HttpRequest;
@@ -56,6 +58,8 @@ class AnthropicClientTest {
     private static final BigDecimal PROJECTED_COST = new BigDecimal("0.0050");
 
     private DailyCostTracker tracker;
+    private AnthropicConnectionMonitor connectionMonitor;
+    private AiAgentMetrics metrics;
 
     @BeforeEach
     void setUp() {
@@ -65,6 +69,10 @@ class AnthropicClientTest {
         when(tracker.today()).thenReturn(LocalDate.of(2026, 5, 2));
         when(tracker.capFor(any())).thenReturn(new BigDecimal("1.00"));
         when(tracker.currentSpend(any(), any(), any())).thenReturn(BigDecimal.ZERO);
+        // Connection FSM defaults to HEALTHY for the existing tests; the
+        // FSM-specific behavior is exercised in AnthropicClientConnectionFsmTest.
+        connectionMonitor = new AnthropicConnectionMonitor(FIXED_CLOCK);
+        metrics = AiAgentMetrics.noop();
     }
 
     @Test
@@ -274,7 +282,9 @@ class AnthropicClientTest {
                     captured.set(req);
                     return okResponse(minimalSuccessBody());
                 },
-                tracker);
+                tracker,
+                connectionMonitor,
+                metrics);
 
         client.submit(haikuSentinelRequest("decide"));
 
@@ -294,7 +304,9 @@ class AnthropicClientTest {
                     captured.set(req);
                     return okResponse(minimalSuccessBody());
                 },
-                tracker);
+                tracker,
+                connectionMonitor,
+                metrics);
 
         client.submit(haikuSentinelRequest("decide"));
 
@@ -339,7 +351,9 @@ class AnthropicClientTest {
                 FIXED_CLOCK,
                 new ObjectMapper(),
                 fetcher,
-                tracker);
+                tracker,
+                connectionMonitor,
+                metrics);
 
         AnthropicResponse outcome = client.submit(haikuSentinelRequest("decide"));
 
@@ -362,7 +376,9 @@ class AnthropicClientTest {
                 FIXED_CLOCK,
                 new ObjectMapper(),
                 fetcher,
-                tracker);
+                tracker,
+                connectionMonitor,
+                metrics);
     }
 
     private static AnthropicRequest haikuSentinelRequest(String userMessage) {

@@ -2,7 +2,10 @@ package com.levelsweep.aiagent.anthropic;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.levelsweep.aiagent.connection.AnthropicConnectionMonitor;
+import com.levelsweep.aiagent.connection.ConnectionMonitor;
 import com.levelsweep.aiagent.cost.DailyCostTracker;
+import com.levelsweep.aiagent.observability.AiAgentMetrics;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.io.IOException;
@@ -88,6 +91,8 @@ public class AnthropicClient {
     private final ObjectMapper mapper;
     private final Fetcher fetcher;
     private final DailyCostTracker costTracker;
+    private final AnthropicConnectionMonitor connectionMonitor;
+    private final AiAgentMetrics metrics;
 
     @Inject
     public AnthropicClient(
@@ -96,8 +101,19 @@ public class AnthropicClient {
             @ConfigProperty(name = "anthropic.enable-prompt-caching", defaultValue = "true")
                     boolean promptCachingEnabled,
             Clock clock,
-            DailyCostTracker costTracker) {
-        this(baseUrl, apiKey, promptCachingEnabled, clock, new ObjectMapper(), defaultFetcher(), costTracker);
+            DailyCostTracker costTracker,
+            AnthropicConnectionMonitor connectionMonitor,
+            AiAgentMetrics metrics) {
+        this(
+                baseUrl,
+                apiKey,
+                promptCachingEnabled,
+                clock,
+                new ObjectMapper(),
+                defaultFetcher(),
+                costTracker,
+                connectionMonitor,
+                metrics);
     }
 
     /** Test seam — inject a {@link Fetcher} returning canned JSON. */
@@ -108,7 +124,9 @@ public class AnthropicClient {
             Clock clock,
             ObjectMapper mapper,
             Fetcher fetcher,
-            DailyCostTracker costTracker) {
+            DailyCostTracker costTracker,
+            AnthropicConnectionMonitor connectionMonitor,
+            AiAgentMetrics metrics) {
         this.baseUrl = Objects.requireNonNull(baseUrl, "baseUrl");
         this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
         this.promptCachingEnabled = promptCachingEnabled;
@@ -116,6 +134,11 @@ public class AnthropicClient {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.fetcher = Objects.requireNonNull(fetcher, "fetcher");
         this.costTracker = Objects.requireNonNull(costTracker, "costTracker");
+        this.connectionMonitor = Objects.requireNonNull(connectionMonitor, "connectionMonitor");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
+        // Publish the initial gauge value so the meter is registered at boot
+        // (alert KQL needs at least one sample to ever evaluate).
+        this.metrics.recordConnectionState(connectionMonitor.dependency(), connectionMonitor.state());
     }
 
     /**
@@ -165,7 +188,31 @@ public class AnthropicClient {
                     request.projectedCostUsd());
         }
 
-        // 2. Build + send the HTTP request.
+        // 2. Connection FSM short-circuit (ADR-0007 §3 cb_open). UNHEALTHY +
+        //    inside the probe interval → return TransportFailure without an
+        //    HTTP call. UNHEALTHY + past the probe interval → admit a single
+        //    probe (transitions UNHEALTHY → RECOVERING) then continue.
+        if (connectionMonitor.shouldShortCircuit()) {
+            long latencyMs = elapsedMs(startNs);
+            LOG.warn(
+                    "anthropic client circuit-breaker open role={} model={} clientRequestId={} state={}",
+                    request.role(),
+                    request.model(),
+                    clientRequestId,
+                    connectionMonitor.state());
+            return new AnthropicResponse.TransportFailure(
+                    clientRequestId, request.role(), request.model(), latencyMs, "circuit_breaker_open");
+        }
+        if (connectionMonitor.state() == ConnectionMonitor.State.UNHEALTHY) {
+            // Probe interval has elapsed (shouldShortCircuit returned false but
+            // state is still UNHEALTHY). Transition to RECOVERING for this one
+            // probe; the response handler will set HEALTHY on success or hold
+            // UNHEALTHY on failure.
+            connectionMonitor.admitProbe();
+            metrics.recordConnectionState(connectionMonitor.dependency(), connectionMonitor.state());
+        }
+
+        // 3. Build + send the HTTP request.
         String body;
         try {
             body = mapper.writeValueAsString(toJsonBody(request));
@@ -206,11 +253,12 @@ public class AnthropicClient {
                 retryEnabled,
                 clientRequestId);
 
+        AnthropicResponse outcome;
         try {
             HttpResponse<String> resp = fetcher.fetch(httpReq.build());
             int status = resp.statusCode();
             long latencyMs = elapsedMs(startNs);
-            return mapResponse(request, clientRequestId, latencyMs, status, resp.body());
+            outcome = mapResponse(request, clientRequestId, latencyMs, status, resp.body());
         } catch (IOException e) {
             LOG.warn(
                     "anthropic client IO error role={} model={} clientRequestId={}: {}",
@@ -218,11 +266,11 @@ public class AnthropicClient {
                     request.model(),
                     clientRequestId,
                     e.toString());
-            return new AnthropicResponse.TransportFailure(
+            outcome = new AnthropicResponse.TransportFailure(
                     clientRequestId, request.role(), request.model(), elapsedMs(startNs), e.toString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new AnthropicResponse.TransportFailure(
+            outcome = new AnthropicResponse.TransportFailure(
                     clientRequestId, request.role(), request.model(), elapsedMs(startNs), "interrupted");
         } catch (RuntimeException e) {
             LOG.warn(
@@ -231,9 +279,34 @@ public class AnthropicClient {
                     request.model(),
                     clientRequestId,
                     e.toString());
-            return new AnthropicResponse.TransportFailure(
+            outcome = new AnthropicResponse.TransportFailure(
                     clientRequestId, request.role(), request.model(), elapsedMs(startNs), e.toString());
         }
+        applyOutcomeToConnectionFsm(outcome);
+        return outcome;
+    }
+
+    /**
+     * Translate an outcome variant to a Connection FSM signal.
+     * {@link AnthropicResponse.Success} clears the error window;
+     * {@link AnthropicResponse.TransportFailure} and
+     * {@link AnthropicResponse.Overloaded} (5xx / 503) record errors.
+     * RateLimited / InvalidRequest / CostCapBreached are NOT connection-health
+     * signals (per the deliverable spec) — Anthropic is responsive and well,
+     * the issue is request- or budget-level. Push the post-mutation state to
+     * the gauge so alert #11 sees the transition immediately.
+     */
+    private void applyOutcomeToConnectionFsm(AnthropicResponse outcome) {
+        if (outcome instanceof AnthropicResponse.Success) {
+            connectionMonitor.recordSuccess();
+        } else if (outcome instanceof AnthropicResponse.TransportFailure tf) {
+            connectionMonitor.recordError(new RuntimeException(tf.exceptionMessage()));
+        } else if (outcome instanceof AnthropicResponse.Overloaded ol) {
+            connectionMonitor.recordError(new RuntimeException("http " + ol.httpStatus()));
+        } else {
+            return;
+        }
+        metrics.recordConnectionState(connectionMonitor.dependency(), connectionMonitor.state());
     }
 
     /** Map an HTTP outcome to an {@link AnthropicResponse} variant. */
