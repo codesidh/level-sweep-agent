@@ -61,7 +61,7 @@ env:
   # The trade-proposed-in incoming channel swaps to in-memory under %prod, so
   # a bogus bootstrap is safe in dev.
   KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
-  MONGO_URL: "mongodb://mongo:27017"
+  MONGO_URL: "mongodb://mongo.mongo.svc.cluster.local:27017"
   MONGO_DB: "level_sweep"
   MSSQL_URL: "jdbc:sqlserver://mssql:1433;databaseName=level_sweep;encrypt=false"
   MSSQL_USER: "sa"
