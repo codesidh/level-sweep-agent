@@ -128,6 +128,31 @@ module "aks" {
   depends_on = [module.networking]
 }
 
+# -----------------------------------------------------------------------------
+# Worker node pool — added when Phase 6 services start landing (Journal,
+# User-Config, Projection, Calendar, Notification, API Gateway, Strimzi
+# Kafka brokers). The 2-node system pool above (4 vCPU / 16 GiB total) is
+# already running Phase 1-4 services (market-data-service + execution-service
+# + ai-agent-service); Phase 6+ would push it past capacity. The worker
+# pool adds 2 × D2s_v4 (4 vCPU / 16 GiB total = doubles capacity, ~$140/mo).
+#
+# No taint — workloads schedule on either pool by capacity. When Phase 7
+# splits per-workload pools (system / hot / ai / warm / kafka per
+# architecture-spec §16.2), introduce taints + nodeSelectors then.
+# -----------------------------------------------------------------------------
+
+resource "azurerm_kubernetes_cluster_node_pool" "worker" {
+  name                  = "worker"
+  kubernetes_cluster_id = module.aks.cluster_id
+  vm_size               = "Standard_D2s_v4"
+  node_count            = 2
+  vnet_subnet_id        = module.networking.subnet_aks_id
+  mode                  = "User"
+  os_type               = "Linux"
+  os_disk_size_gb       = 30
+  tags                  = local.tags
+}
+
 module "static_web_app" {
   source      = "../../modules/static_web_app"
   project     = var.project
