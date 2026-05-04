@@ -104,17 +104,36 @@ jobs:
           terraform plan -input=false -lock=false || true
 
   # ---------------------------------------------------------------------------
-  # Manual apply via workflow_dispatch — gated by a GitHub Environment that
-  # has required reviewers configured in repo settings.
+  # Apply on push-to-main (auto, dev only) or via workflow_dispatch (manual,
+  # any environment). Both paths share a single job that resolves the target
+  # environment from either source. Stage / prod retain manual-only triggering
+  # — they require the workflow_dispatch path so the operator picks the
+  # environment + action explicitly.
+  #
+  # Auto-apply on main applies ONLY to `dev` (the always-feature-branch-merged
+  # environment). The `environment: dev` GitHub Environment provides the
+  # protection layer — configure required reviewers there if a stricter gate
+  # is needed before any push-to-main triggers an actual TF apply.
+  #
+  # Pre-Phase 6 history: this workflow was plan-only on push and required a
+  # manual workflow_dispatch to apply. That meant TF changes (e.g. AKS
+  # node_count bump in #85, worker pool in #97) never reached the cluster
+  # until someone manually triggered the apply, and the cluster silently fell
+  # behind main. Auto-apply on main eliminates that drift.
   # ---------------------------------------------------------------------------
   apply:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
-    name: apply (${{ github.event.inputs.environment }})
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+    name: apply (${{ github.event.inputs.environment || 'dev' }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    needs: [plan]
     environment:
       # Configure protection rules + required reviewers in repo Settings.
-      name: ${{ github.event.inputs.environment }}
+      # On push-to-main this is always `dev`; workflow_dispatch lets the
+      # operator pick.
+      name: ${{ github.event.inputs.environment || 'dev' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -132,9 +151,9 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: terraform init
-        working-directory: infra/environments/${{ github.event.inputs.environment }}
+        working-directory: infra/environments/${{ github.event.inputs.environment || 'dev' }}
         run: terraform init
 
       - name: terraform apply
-        working-directory: infra/environments/${{ github.event.inputs.environment }}
+        working-directory: infra/environments/${{ github.event.inputs.environment || 'dev' }}
         run: terraform apply -auto-approve -input=false

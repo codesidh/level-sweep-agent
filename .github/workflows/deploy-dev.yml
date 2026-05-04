@@ -123,6 +123,25 @@ jobs:
           kubectl -n market-data rollout status deployment/market-data-service --timeout=5m
           kubectl -n market-data get pods,svc
 
+      - name: Dump pod state on failure (market-data)
+        if: failure()
+        run: |
+          echo "::group::nodes"
+          kubectl get nodes -o wide || true
+          echo "::endgroup::"
+          echo "::group::pods"
+          kubectl -n market-data get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n market-data describe pods -l app.kubernetes.io/name=market-data-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n market-data get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n market-data logs -l app.kubernetes.io/name=market-data-service --tail=200 --all-containers || true
+          echo "::endgroup::"
+
   # ---------------------------------------------------------------------------
   # Phase 3 — execution-service deploy. Mirrors the market-data-service job
   # above. The two services live in distinct namespaces (market-data,
@@ -211,6 +230,25 @@ jobs:
         run: |
           kubectl -n execution-service rollout status deployment/execution-service --timeout=5m
           kubectl -n execution-service get pods,svc
+
+      - name: Dump pod state on failure (execution-service)
+        if: failure()
+        run: |
+          echo "::group::nodes"
+          kubectl get nodes -o wide || true
+          echo "::endgroup::"
+          echo "::group::pods"
+          kubectl -n execution-service get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n execution-service describe pods -l app.kubernetes.io/name=execution-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n execution-service get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n execution-service logs -l app.kubernetes.io/name=execution-service --tail=200 --all-containers || true
+          echo "::endgroup::"
 
   # ---------------------------------------------------------------------------
   # Phase 4 — ai-agent-service deploy. Mirrors the execution-service job
@@ -309,6 +347,25 @@ jobs:
           kubectl -n ai-agent rollout status deployment/ai-agent-service --timeout=5m
           kubectl -n ai-agent get pods,svc
 
+      - name: Dump pod state on failure (ai-agent-service)
+        if: failure()
+        run: |
+          echo "::group::nodes"
+          kubectl get nodes -o wide || true
+          echo "::endgroup::"
+          echo "::group::pods"
+          kubectl -n ai-agent get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n ai-agent describe pods -l app.kubernetes.io/name=ai-agent-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n ai-agent get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n ai-agent logs -l app.kubernetes.io/name=ai-agent-service --tail=200 --all-containers || true
+          echo "::endgroup::"
+
   # ---------------------------------------------------------------------------
   # Phase 6 — journal-service deploy. Mirrors the ai-agent-service job above.
   # Lives in its own namespace `journal-service` so a failed deploy of one
@@ -394,3 +451,22 @@ jobs:
         run: |
           kubectl -n journal-service rollout status deployment/journal-service --timeout=5m
           kubectl -n journal-service get pods,svc
+
+      - name: Dump pod state on failure (journal-service)
+        if: failure()
+        run: |
+          echo "::group::nodes"
+          kubectl get nodes -o wide || true
+          echo "::endgroup::"
+          echo "::group::pods"
+          kubectl -n journal-service get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n journal-service describe pods -l app.kubernetes.io/name=journal-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n journal-service get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n journal-service logs -l app.kubernetes.io/name=journal-service --tail=200 --all-containers || true
+          echo "::endgroup::"
