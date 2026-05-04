@@ -424,7 +424,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "eod_flatten_failure" 
   severity             = 1 # Sev 1 == P1 — 0DTE auto-exercise at 16:00 ET is real money even on paper
   enabled              = true
 
-  description             = "EOD flatten cron logged 'eod flatten: trade FAILED' — at least one open position did not exit before 16:00 ET. 0DTE auto-exercise risk. Operator: page broker desk and reconcile manually. P0 escalation if NO audit row exists at all (cron didn't fire) — separate 'EOD flatten missed' alert TBD."
+  description             = "EOD flatten cron logged 'eod flatten: trade FAILED' — at least one open position did not exit before 16:00 ET. 0DTE auto-exercise risk. Operator: page broker desk and reconcile manually. The 'cron didn't fire AT ALL' P0 escalation gap is covered by alert #18 (eod_flatten_heartbeat_missed)."
   display_name            = "P1 — EOD flatten failure"
   auto_mitigation_enabled = true
 
@@ -908,6 +908,70 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "pod_restart_storm" {
       | where role != ""
       | summarize starts = count() by role, bin(timestamp, 30m)
       | where starts > 3
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 18. EOD flatten heartbeat missed (P0)
+# -----------------------------------------------------------------------------
+# The complement to alert #8 (eod_flatten_failure). #8 fires only when the
+# cron ran and a trade FAILED. If the cron didn't fire AT ALL — JVM crash,
+# pod missing, scheduler disabled — no row exists, so #8 is silent. This
+# alert catches that gap.
+#
+# EodFlattenScheduler emits exactly one of these log lines per fire:
+#   "eod scheduler running in stub mode" (no OrderSubmitter bean)
+#   "eod flatten: no in-flight trades; skipping" (no positions)
+#   "eod flatten: starting sessionDate=..." (has positions)
+# We aggregate across all three. Window = 26 hours (one daily fire + 2-hour
+# tolerance for daylight savings + cron drift). Severity 0 because 0DTE
+# auto-exercise at 16:00 ET is real money even on Alpaca paper — a missed
+# cron means open positions auto-exercise at the strike price with no exit
+# attempt logged.
+#
+# Phase 8 (paper→live) bumps the severity 0 to a Twilio SMS page; Phase 6
+# email-only is the same as the rest of the action group.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "eod_flatten_heartbeat_missed" {
+  name                = "alert-${var.project}-${var.environment}-eod-flatten-heartbeat-missed"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT30M"
+  window_duration      = "P2D"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 0 # Sev 0 == P0 — 0DTE auto-exercise at 16:00 ET is real money
+  enabled              = true
+
+  description             = "EodFlattenScheduler did not emit a 'eod flatten: ...' or 'eod scheduler running in stub mode' log line in the last 26 hours. Cron didn't fire — open 0DTE positions WILL auto-exercise at 16:00 ET strike. Operator: page broker desk, manually flatten any open positions via Alpaca dashboard, investigate scheduler health (JVM crash? pod missing? Quartz disabled?)."
+  display_name            = "P0 — EOD flatten heartbeat missed (>26h)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      traces
+      | where cloud_RoleName == "execution-service"
+      | where message has_any (
+          "eod flatten: starting",
+          "eod flatten: no in-flight trades",
+          "eod scheduler running in stub mode")
+      | summarize last_seen = max(timestamp) by tenant_id = "OWNER"
+      | extend hours_since = datetime_diff('hour', now(), last_seen)
+      | where hours_since >= 26
     KQL
     time_aggregation_method = "Count"
     threshold               = 1
