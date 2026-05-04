@@ -967,7 +967,7 @@ jobs:
             --namespace api-gateway-bff \
             --create-namespace \
             --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/api-gateway-bff" \
-            --set image.tag="${{ steps.sha.outputs.value }}" \
+            --set image.tag=latest --set image.pullPolicy=Always \
             --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
             --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
             --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
