@@ -20,6 +20,12 @@ spring:
       database: ${MONGO_DB:level_sweep}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      # Phase 6 dev cluster has no Kafka broker (Strimzi lands in a Phase 6
+      # follow-up). Default the listener to NOT auto-start so a missing
+      # KAFKA_BOOTSTRAP_SERVERS does not crash the pod with "No resolvable
+      # bootstrap urls". Override to `true` via env once Strimzi is deployed.
+      auto-startup: ${KAFKA_LISTENER_AUTOSTARTUP:false}
     consumer:
       group-id: journal-service
       # CAP §6: journal needs the full audit history per partition. A new pod

@@ -23,6 +23,12 @@ spring:
       database: ${MONGO_DB:level_sweep}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      # Phase 6 dev cluster has no Kafka broker (Strimzi lands in a Phase 6
+      # follow-up). Default the listener to NOT auto-start so a missing
+      # KAFKA_BOOTSTRAP_SERVERS does not crash the pod. Override to `true`
+      # via env once Strimzi is deployed.
+      auto-startup: ${KAFKA_LISTENER_AUTOSTARTUP:false}
     consumer:
       group-id: notification-service
       # AP §6: notifications are eventually delivered. earliest replays the
