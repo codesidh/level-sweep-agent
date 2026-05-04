@@ -304,6 +304,26 @@ resource "azurerm_federated_identity_credential" "notification_service_sa" {
   subject             = "system:serviceaccount:notification-service:notification-service"
 }
 
+# Phase 6: projection-service (cold-path Spring Boot 3.x Monte Carlo engine)
+# binds to the same kubelet MI via its own federated credential. Subject must
+# match the deploy-dev.yml `--namespace` + ServiceAccount name produced by
+# the Helm chart (`system:serviceaccount:projection-service:projection-service`).
+# Same footprint as journal-service — 200m CPU / 512 MiB requests — because
+# the Monte Carlo simulator bursts CPU and allocates a 100k-element double[]
+# for percentile sorting. Fits in the existing 2 × Standard_D2s_v4 cluster
+# (~4.5 GiB used across all Phase 6 cold-path service pods of 16 GiB
+# available). Phase 7 splits this off into a dedicated per-service workload
+# MI alongside the other services AND revisits the node-pool size once
+# decision-engine and the remaining cold-path Spring services land.
+resource "azurerm_federated_identity_credential" "projection_service_sa" {
+  name                = "fc-${var.project}-${local.environment}-projection-service"
+  resource_group_name = module.aks.cluster_resource_group
+  parent_id           = module.aks.kubelet_user_assigned_identity_id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = module.aks.oidc_issuer_url
+  subject             = "system:serviceaccount:projection-service:projection-service"
+}
+
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
   scope                = module.keyvault.kv_id
   role_definition_name = "Key Vault Secrets User"

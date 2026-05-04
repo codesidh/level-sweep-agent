@@ -1,0 +1,145 @@
+# =============================================================================
+# Default values for projection-service.
+#
+# DEPLOYMENT NOTE (Phase 6): this chart deploys the Projection Service
+# (architecture-spec §9 cold-path component map; requirements §22 #4 default
+# 12-month backtest window for SPY 0DTE). Cold-path Spring Boot 3.x service —
+# serves POST /projection/run + GET /projection/last/{tenantId} over the
+# projections.runs Mongo collection. Phase 7 swaps to managed Cosmos / MongoDB
+# Atlas per architecture-spec §13.2.
+#
+# Per CLAUDE.md guardrail #8 (scope-gated soak): projection-service is a NEW
+# pod, doesn't modify any service currently in active soak (Phase 3+4),
+# doesn't change shared infrastructure (no Kafka, no MS SQL; the Mongo
+# DataSource shape is the same one journal-service already uses), and any
+# newly exposed runtime path stays default-OFF behind feature flags. Lands
+# on main without resetting the soak counter on the soaking services.
+#
+# Per-environment overrides are passed via `helm upgrade --install --set ...`
+# from .github/workflows/deploy-dev.yml.
+# =============================================================================
+
+image:
+  # set per env in the deploy workflow, e.g. "<acr>.azurecr.io/projection-service".
+  repository: ""
+  # overridden per push to the immutable git SHA.
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Phase 6 single-instance per architecture-spec §16. Multi-replica + leader
+# election arrives in Phase 7 once consumer-group rebalance + idempotent
+# Mongo writes are stress-tested. The projection engine is a cold path —
+# single replica is fine for Phase A throughput (the dashboard surfaces a
+# Projection panel, operator clicks "run"; not a per-trade workload).
+replicas: 1
+
+# Deployment strategy. Phase 6 dev is the same 2-node cluster used by
+# Phase 1+3+4+6-others; Recreate avoids the RollingUpdate deadlock where a
+# second pod can't schedule alongside its predecessor at 512 MiB requests.
+deployment:
+  strategy: Recreate
+  maxSurge: 1
+  maxUnavailable: 0
+
+service:
+  port: 8089
+  type: ClusterIP
+
+resources:
+  requests:
+    # Cold-path Spring Boot — lighter than the Quarkus hot-paths. Heavier
+    # than user-config-service because the Monte Carlo engine bursts CPU
+    # and allocates a 100k-element double[] for percentile sorting.
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    # Memory limit only — no CPU limit per Spring Boot + JDK 21 best practice
+    # on K8s (CFS throttling kills GC pause-time tail). HPA wired in Phase 7.
+    memory: 1024Mi
+
+# Plain-text application config. Anything secret comes from keyVault.objects.
+env:
+  TENANT_ID: "OWNER"
+  # Mongo URL — managed Mongo lands in Phase 7 per architecture-spec §13.2.
+  # Until then, in-cluster Mongo (deployed as a separate Helm release) is
+  # the dev target. The connection-string format follows the Spring Boot
+  # spring.data.mongodb.uri convention.
+  MONGO_URL: "mongodb://mongo:27017/level_sweep"
+  MONGO_DB: "level_sweep"
+  # Force the Spring profile to `prod` so the test-profile overrides
+  # (fake Mongo URI) DON'T accidentally activate. The test profile is for
+  # unit tests only.
+  SPRING_PROFILES_ACTIVE: "prod"
+  # OTel service.name — App Insights agent (loaded as -javaagent in
+  # Dockerfile.jvm) reads this and stamps it on every trace/log/metric.
+  OTEL_SERVICE_NAME: "projection-service"
+
+# Workload identity binding (Azure AD federated → K8s ServiceAccount).
+workloadIdentity:
+  enabled: true
+  # Per-env: AKS-bound user-assigned MI client id. Phase 6 reuses the kubelet
+  # MI; Phase 7 swaps in a dedicated per-service MI federated to this SA.
+  clientId: ""
+
+keyVault:
+  enabled: true
+  # Per-env Azure AD tenant ID.
+  tenantId: ""
+  # Bare KV name (not URI). Set by the deploy workflow.
+  name: ""
+  vaultUri: ""
+  objects:
+    # App Insights connection string — optional in Phase 6 dev (the agent
+    # self-disables if unset).
+    - name: applicationinsights-connection-string
+      type: secret
+      env: APPLICATIONINSIGHTS_CONNECTION_STRING
+      optional: true
+    # mongo-url is intentionally NOT mounted here — same rationale as
+    # journal-service Phase 6: managed Mongo (Cosmos / Atlas) lands in
+    # Phase 7. Until then, the in-cluster Mongo URL is plain-text in env
+    # above. Adding the mount back is a one-line change once Phase 7
+    # provisions the DB and seeds the secret.
+
+# Forward-compat keys mirrored from the journal-service / ai-agent-service /
+# execution-service chart shape so the deploy-dev.yml --set list can stay
+# symmetric across services. Templates ignore these today; a future chart
+# bump can wire them in without a workflow edit.
+appInsights:
+  connectionStringSecretName: applicationinsights-connection-string
+
+mongo:
+  urlSecretName: mongo-url
+
+healthCheck:
+  liveness:
+    # Spring Boot Actuator's K8s liveness probe — distinct from /actuator/health.
+    # Liveness fails only on irrecoverable JVM errors (OOM, deadlock). Mongo
+    # being unreachable is NOT a liveness failure — it's a readiness one.
+    path: /actuator/health/liveness
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    # Readiness includes the MongoHealthIndicator — when Mongo is down, K8s
+    # pulls the pod out of Service rotation but does NOT restart it. The
+    # pod resumes serving once Mongo recovers.
+    path: /actuator/health/readiness
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+
+serviceAccount:
+  # Auto-derive from chart fullname when name is empty.
+  name: ""
+
+# Pod-level security context. Container-level overrides applied in deployment.yaml.
+podSecurityContext:
+  fsGroup: 100
+  runAsNonRoot: true
+  runAsUser: 100
