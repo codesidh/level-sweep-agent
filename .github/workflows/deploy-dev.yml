@@ -486,6 +486,93 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-calendar-service:
     name: deploy calendar-service to dev
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+
+    steps:
+      # On workflow_run, checkout defaults to the default branch tip — pin to
+      # the head_sha that main.yml just built so the chart and the image are
+      # in lockstep.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Install kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.1.4
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
+
+      - name: Resolve image tag SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "value=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Helm upgrade --install
+        run: |
+          helm upgrade --install calendar-service deploy/helm/calendar-service \
+            --namespace calendar-service \
+            --create-namespace \
+            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/calendar-service" \
+            --set image.tag="${{ steps.sha.outputs.value }}" \
+            --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
+            --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+            --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
+            --set keyVault.vaultUri="${{ secrets.KEY_VAULT_URI }}" \
+            --set appInsights.connectionStringSecretName=applicationinsights-connection-string \
+            --wait \
+            --timeout 5m
+
+      - name: Verify rollout
+        run: |
+          kubectl -n calendar-service rollout status deployment/calendar-service --timeout=5m
+          kubectl -n calendar-service get pods,svc
+
+      - name: Dump pod state on failure (calendar-service)
+        if: failure()
+        run: |
+          echo "::group::nodes"
+          kubectl get nodes -o wide || true
+          echo "::endgroup::"
+          echo "::group::pods"
+          kubectl -n calendar-service get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n calendar-service describe pods -l app.kubernetes.io/name=calendar-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n calendar-service get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n calendar-service logs -l app.kubernetes.io/name=calendar-service --tail=200 --all-containers || true
+          echo "::endgroup::"
+
+  # ---------------------------------------------------------------------------
   # Phase 6 — user-config-service deploy. Mirrors the journal-service job
   # above. Lives in its own namespace `user-config-service` so a failed
   # deploy of one service does not block the others. The federated-identity
@@ -504,6 +591,93 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-user-config-service:
     name: deploy user-config-service to dev
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+
+    steps:
+      # On workflow_run, checkout defaults to the default branch tip — pin to
+      # the head_sha that main.yml just built so the chart and the image are
+      # in lockstep.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Install kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.1.4
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
+
+      - name: Resolve image tag SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "value=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Helm upgrade --install
+        run: |
+          helm upgrade --install user-config-service deploy/helm/user-config-service \
+            --namespace user-config-service \
+            --create-namespace \
+            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/user-config-service" \
+            --set image.tag="${{ steps.sha.outputs.value }}" \
+            --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
+            --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+            --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
+            --set keyVault.vaultUri="${{ secrets.KEY_VAULT_URI }}" \
+            --set appInsights.connectionStringSecretName=applicationinsights-connection-string \
+            --wait \
+            --timeout 5m
+
+      - name: Verify rollout
+        run: |
+          kubectl -n user-config-service rollout status deployment/user-config-service --timeout=5m
+          kubectl -n user-config-service get pods,svc
+
+      - name: Dump pod state on failure (user-config-service)
+        if: failure()
+        run: |
+          echo "::group::nodes"
+          kubectl get nodes -o wide || true
+          echo "::endgroup::"
+          echo "::group::pods"
+          kubectl -n user-config-service get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n user-config-service describe pods -l app.kubernetes.io/name=user-config-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n user-config-service get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n user-config-service logs -l app.kubernetes.io/name=user-config-service --tail=200 --all-containers || true
+          echo "::endgroup::"
+
+  # ---------------------------------------------------------------------------
   # Phase 6 — notification-service deploy. Mirrors the journal-service job
   # above. Lives in its own namespace `notification-service` so a failed
   # deploy of one service does not block the others. The federated-identity
@@ -575,17 +749,6 @@ jobs:
 
       - name: Helm upgrade --install
         run: |
-          helm upgrade --install calendar-service deploy/helm/calendar-service \
-            --namespace calendar-service \
-            --create-namespace \
-            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/calendar-service" \
-            --set image.tag="${{ steps.sha.outputs.value }}" \
-            --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
-            --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
-          helm upgrade --install user-config-service deploy/helm/user-config-service \
-            --namespace user-config-service \
-            --create-namespace \
-            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/user-config-service" \
           helm upgrade --install notification-service deploy/helm/notification-service \
             --namespace notification-service \
             --create-namespace \
@@ -601,14 +764,6 @@ jobs:
 
       - name: Verify rollout
         run: |
-          kubectl -n calendar-service rollout status deployment/calendar-service --timeout=5m
-          kubectl -n calendar-service get pods,svc
-
-      - name: Dump pod state on failure (calendar-service)
-          kubectl -n user-config-service rollout status deployment/user-config-service --timeout=5m
-          kubectl -n user-config-service get pods,svc
-
-      - name: Dump pod state on failure (user-config-service)
           kubectl -n notification-service rollout status deployment/notification-service --timeout=5m
           kubectl -n notification-service get pods,svc
 
@@ -619,26 +774,6 @@ jobs:
           kubectl get nodes -o wide || true
           echo "::endgroup::"
           echo "::group::pods"
-          kubectl -n calendar-service get pods -o wide || true
-          echo "::endgroup::"
-          echo "::group::describe"
-          kubectl -n calendar-service describe pods -l app.kubernetes.io/name=calendar-service || true
-          echo "::endgroup::"
-          echo "::group::events"
-          kubectl -n calendar-service get events --sort-by='.lastTimestamp' | tail -50 || true
-          echo "::endgroup::"
-          echo "::group::logs"
-          kubectl -n calendar-service logs -l app.kubernetes.io/name=calendar-service --tail=200 --all-containers || true
-          kubectl -n user-config-service get pods -o wide || true
-          echo "::endgroup::"
-          echo "::group::describe"
-          kubectl -n user-config-service describe pods -l app.kubernetes.io/name=user-config-service || true
-          echo "::endgroup::"
-          echo "::group::events"
-          kubectl -n user-config-service get events --sort-by='.lastTimestamp' | tail -50 || true
-          echo "::endgroup::"
-          echo "::group::logs"
-          kubectl -n user-config-service logs -l app.kubernetes.io/name=user-config-service --tail=200 --all-containers || true
           kubectl -n notification-service get pods -o wide || true
           echo "::endgroup::"
           echo "::group::describe"
