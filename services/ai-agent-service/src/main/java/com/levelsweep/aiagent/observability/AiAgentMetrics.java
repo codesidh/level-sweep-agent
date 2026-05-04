@@ -100,6 +100,15 @@ public class AiAgentMetrics {
      */
     public static final String METER_CONNECTION_STATE = "connection.state";
 
+    /** Phase 5 S6 — assistant chat success counter (tagged tenant_id). */
+    public static final String METER_ASSISTANT_FIRED = "ai.assistant.fired";
+
+    /** Phase 5 S6 — assistant chat failure counter (tagged tenant_id + reason). */
+    public static final String METER_ASSISTANT_FAILED = "ai.assistant.failed";
+
+    /** Phase 5 S6 — assistant token volume counter (tagged tenant_id + kind=input|output). */
+    public static final String METER_ASSISTANT_TOKENS = "ai.assistant.tokens";
+
     private final MeterRegistry registry;
 
     /**
@@ -238,6 +247,52 @@ public class AiAgentMetrics {
         LOG.debug("ai-agent metrics: reviewer.run.complete tenantId={} outcome={}", tenantId, outcome.label());
     }
 
+    /**
+     * Increment the assistant-fired counter — one increment per successful
+     * chat round-trip (Anthropic Success + non-empty response text).
+     */
+    public void assistantFired(String tenantId) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Counter.builder(METER_ASSISTANT_FIRED)
+                .description("Conversational Assistant calls that produced a substantive response.")
+                .tags(Tags.of("tenant_id", tenantId))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Increment the assistant-failed counter, tagged with the failure reason.
+     * Counters are tag-stable across invocations so Prometheus/App Insights
+     * can split the rate by reason.
+     */
+    public void assistantFailed(String tenantId, AssistantFailureReason reason) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(reason, "reason");
+        Counter.builder(METER_ASSISTANT_FAILED)
+                .description("Conversational Assistant calls that returned a synthetic error turn.")
+                .tags(Tags.of("tenant_id", tenantId, "reason", reason.label()))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Record token volume for one successful chat round-trip. {@code kind} is
+     * one of {@code "input"} or {@code "output"}. Increments by {@code count}
+     * so a single call captures both legs in one place.
+     */
+    public void assistantTokens(String tenantId, String kind, int count) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(kind, "kind");
+        if (count <= 0) {
+            return;
+        }
+        Counter.builder(METER_ASSISTANT_TOKENS)
+                .description("Conversational Assistant token volume (input|output).")
+                .tags(Tags.of("tenant_id", tenantId, "kind", kind))
+                .register(registry)
+                .increment(count);
+    }
+
     /** Stable label values for the {@code reason} dimension on {@link #METER_NARRATOR_SKIPPED}. */
     public enum NarratorSkipReason {
         COST_CAP("cost_cap"),
@@ -247,6 +302,24 @@ public class AiAgentMetrics {
         private final String label;
 
         NarratorSkipReason(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
+
+    /** Stable label values for the {@code reason} dimension on {@link #METER_ASSISTANT_FAILED}. */
+    public enum AssistantFailureReason {
+        ANTHROPIC_FAILURE("anthropic_failure"),
+        COST_CAP("cost_cap"),
+        PARSE("parse"),
+        TIMEOUT("timeout");
+
+        private final String label;
+
+        AssistantFailureReason(String label) {
             this.label = label;
         }
 

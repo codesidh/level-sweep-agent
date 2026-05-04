@@ -42,6 +42,9 @@ dependencies {
     // implementation(libs.anthropic.sdk) — explicitly NOT pulled.
 
     testImplementation(libs.quarkus.junit5)
+    // Phase 5 S6 — @InjectMock + @QuarkusTest harness for AssistantResource
+    // REST tests. Provides io.quarkus.test.InjectMock.
+    testImplementation(libs.quarkus.junit5.mockito)
     testImplementation(libs.quarkus.rest.assured)
     testImplementation(libs.assertj.core)
     // Mockito for the AnthropicClient/DailyCostTracker/AuditWriter unit tests.
