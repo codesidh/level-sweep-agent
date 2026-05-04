@@ -6,6 +6,7 @@ import com.levelsweep.decision.fsm.trade.TradeEvent;
 import com.levelsweep.decision.fsm.trade.TradeFsmInstance;
 import com.levelsweep.decision.fsm.trade.TradeService;
 import com.levelsweep.decision.risk.RiskService;
+import com.levelsweep.decision.sentinel.SentinelGate;
 import com.levelsweep.decision.signal.SignalEvaluator;
 import com.levelsweep.decision.strike.StrikeSelectorService;
 import com.levelsweep.shared.domain.indicators.IndicatorSnapshot;
@@ -102,6 +103,7 @@ public class TradeSaga {
     private final SessionService sessionService;
     private final SignalEvaluator signalEvaluator;
     private final RiskService riskService;
+    private final SentinelGate sentinelGate;
     private final StrikeSelectorService strikeSelectorService;
     private final TradeService tradeService;
     private final Clock clock;
@@ -123,6 +125,7 @@ public class TradeSaga {
             SessionService sessionService,
             SignalEvaluator signalEvaluator,
             RiskService riskService,
+            SentinelGate sentinelGate,
             StrikeSelectorService strikeSelectorService,
             TradeService tradeService,
             Clock clock,
@@ -135,6 +138,7 @@ public class TradeSaga {
         this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
         this.signalEvaluator = Objects.requireNonNull(signalEvaluator, "signalEvaluator");
         this.riskService = Objects.requireNonNull(riskService, "riskService");
+        this.sentinelGate = Objects.requireNonNull(sentinelGate, "sentinelGate");
         this.strikeSelectorService = Objects.requireNonNull(strikeSelectorService, "strikeSelectorService");
         this.tradeService = Objects.requireNonNull(tradeService, "tradeService");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -201,6 +205,39 @@ public class TradeSaga {
                         correlationId);
                 return finishSkipped(skipped, sample);
             }
+
+            // ---- 3.5 Sentinel veto channel (ADR-0007 §1) -------------------
+            // Sits between RiskGate accepted and StrikeSelector. Fail-OPEN
+            // (ADR-0007 §3): every transport / parse / timeout failure is
+            // returned as Outcome.Proceed so a Sentinel outage never silently
+            // halts entries — the deterministic Risk FSM HALT is the
+            // fail-closed mechanism, not Sentinel.
+            //
+            // When the feature flag is OFF (default), the gate short-circuits
+            // to Outcome.Skip and the saga's state graph is byte-identical to
+            // the pre-Sentinel one — replay parity preserved.
+            //
+            // The signalId thread-through: we use the correlationId since the
+            // saga's signal evaluator does not (yet) emit a separate signalId.
+            // The replay corpus key is (tenantId, correlationId, indicator
+            // tuple) per ADR-0007 §5; correlationId is deterministic given
+            // the UUID supplier.
+            SentinelGate.Outcome sentinelOutcome =
+                    sentinelGate.evaluate(tenantId, "pending", correlationId, bar, snapshot, levels, eval);
+            if (sentinelOutcome instanceof SentinelGate.Outcome.VetoCompensate veto) {
+                TradeSkipped skipped = buildSkipped(
+                        bar,
+                        levels,
+                        TradeSkipped.STAGE_SENTINEL_VETO,
+                        List.of(
+                                "sentinel_reason_code:" + veto.reasonCode().name(),
+                                "sentinel_reason_text:" + truncateForAudit(veto.reasonText())),
+                        correlationId);
+                return finishSkipped(skipped, sample);
+            }
+            // Outcome.Proceed (allow / fail-OPEN) and Outcome.Skip (flag off)
+            // both fall through to StrikeSelector — the gate already
+            // incremented the correct counter for either path.
 
             // ---- 4. Strike selection ---------------------------------------
             // The saga runs at bar-close so the trading session date is the bar's
@@ -302,6 +339,18 @@ public class TradeSaga {
             Bar bar, Levels levels, String stage, List<String> reasons, String correlationId) {
         return new TradeSkipped(
                 levels.tenantId(), levels.sessionDate(), bar.closeTime(), stage, reasons, correlationId);
+    }
+
+    /**
+     * Cap the Sentinel reason text at 80 chars — keeps the TradeSkipped
+     * audit row compact and prevents a model-generated 280-char rationale
+     * from ballooning the per-bar event size on the bus.
+     */
+    private static String truncateForAudit(String text) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        return text.length() <= 80 ? text : text.substring(0, 80) + "…";
     }
 
     private Result finishSkipped(TradeSkipped skipped, Timer.Sample sample) {

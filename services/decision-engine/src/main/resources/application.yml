@@ -160,6 +160,26 @@ levelsweep:
     # is the warn threshold expressed as a fraction of dailyLossBudget.
     max-trades-per-day: 5
     budget-low-fraction: "0.70"
+  # Phase 5 S5 — Pre-Trade Sentinel veto wire (ADR-0007). The flag is OFF
+  # by default; flipping it on requires the Phase 4 soak (5+ RTH sessions on
+  # real Anthropic) to clear, per ADR-0007 §7. The remote ai-agent-service
+  # also reads `levelsweep.sentinel.enabled` — defense in depth.
+  sentinel:
+    enabled: false
+    # Hard wall-clock ceiling on the saga thread (ADR-0007 §4). The remote
+    # already enforces 750ms against Anthropic; this layer adds belt-and-
+    # braces protection against REST-hop stalls (DNS, TLS handshake,
+    # connection-pool exhaustion).
+    timeout-ms: 750
+    # Defensive defaults for fields the decision-engine doesn't yet compute
+    # (rsi2, regime, vix-close-prev). The Sentinel prompt absorbs zero/UNKNOWN
+    # without producing spurious vetoes — see SentinelPromptBuilder tests.
+    vix-close-prev-default: "0"
+    regime-default: "UNKNOWN"
+  ai-agent:
+    # In-cluster URL for the ai-agent-service Pre-Trade Sentinel REST
+    # endpoint. AKS namespace `ai-agent`, default port 8084.
+    url: "${LEVELSWEEP_AI_AGENT_URL:http://ai-agent-service.ai-agent:8084}"
 
 tenant:
   id: "${TENANT_ID:OWNER}"

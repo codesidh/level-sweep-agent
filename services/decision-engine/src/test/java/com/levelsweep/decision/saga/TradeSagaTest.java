@@ -15,6 +15,8 @@ import com.levelsweep.decision.fsm.trade.TradeFsmInstance;
 import com.levelsweep.decision.fsm.trade.TradeService;
 import com.levelsweep.decision.fsm.trade.TradeState;
 import com.levelsweep.decision.risk.RiskService;
+import com.levelsweep.decision.sentinel.SentinelClientResult;
+import com.levelsweep.decision.sentinel.SentinelGate;
 import com.levelsweep.decision.signal.SignalEvaluator;
 import com.levelsweep.decision.strike.StrikeSelectorService;
 import com.levelsweep.shared.domain.indicators.IndicatorSnapshot;
@@ -78,6 +80,7 @@ class TradeSagaTest {
     private SessionService sessionService;
     private SignalEvaluator signalEvaluator;
     private RiskService riskService;
+    private SentinelGate sentinelGate;
     private StrikeSelectorService strikeSelectorService;
     private TradeService tradeService;
     private Clock clock;
@@ -91,6 +94,12 @@ class TradeSagaTest {
         sessionService = Mockito.mock(SessionService.class);
         signalEvaluator = Mockito.mock(SignalEvaluator.class);
         riskService = Mockito.mock(RiskService.class);
+        sentinelGate = Mockito.mock(SentinelGate.class);
+        // Default: gate skipped (flag-off) so existing test expectations
+        // (which pre-date the Sentinel step) remain byte-identical. Tests
+        // that exercise the gate explicitly override this stub.
+        Mockito.when(sentinelGate.evaluate(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new SentinelGate.Outcome.Skip("flag_off"));
         strikeSelectorService = Mockito.mock(StrikeSelectorService.class);
         tradeService = Mockito.mock(TradeService.class);
         clock = Clock.fixed(CLOSE, ZoneOffset.UTC);
@@ -103,6 +112,7 @@ class TradeSagaTest {
                 sessionService,
                 signalEvaluator,
                 riskService,
+                sentinelGate,
                 strikeSelectorService,
                 tradeService,
                 clock,
@@ -206,6 +216,65 @@ class TradeSagaTest {
         assertThat(skipped.reasons()).containsExactly("risk_state:UNINITIALIZED");
     }
 
+    // ---- Sentinel veto -----------------------------------------------------
+
+    @Test
+    void skipsWhenSentinelVetoes() {
+        when(sessionService.currentState(TENANT)).thenReturn(SessionState.TRADING);
+        when(signalEvaluator.evaluate(any(), any(), any())).thenReturn(callEntry());
+        when(riskService.canTakeTrade(TENANT)).thenReturn(true);
+        when(sentinelGate.evaluate(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new SentinelGate.Outcome.VetoCompensate(
+                        SentinelClientResult.ReasonCode.STRUCTURE_DIVERGENCE, "regime fights signal"));
+
+        TradeSaga.Result result = saga.run(twoMinBar(), bullishSnapshot(), levels());
+
+        assertThat(result).isInstanceOf(TradeSaga.Result.Skipped.class);
+        TradeSkipped skipped = ((TradeSaga.Result.Skipped) result).event();
+        assertThat(skipped.stage()).isEqualTo(TradeSkipped.STAGE_SENTINEL_VETO);
+        assertThat(skipped.reasons())
+                .containsExactly(
+                        "sentinel_reason_code:STRUCTURE_DIVERGENCE", "sentinel_reason_text:regime fights signal");
+        verify(strikeSelectorService, never()).selectFor(any(), any(), any(), any());
+        verify(tradeService, never()).propose(any(), any());
+    }
+
+    @Test
+    void proceedsToStrikeSelectorWhenSentinelAllows() {
+        // Override the default Skip stub from setUp() with an explicit Allow.
+        when(sessionService.currentState(TENANT)).thenReturn(SessionState.TRADING);
+        when(signalEvaluator.evaluate(any(), any(), any())).thenReturn(callEntry());
+        when(riskService.canTakeTrade(TENANT)).thenReturn(true);
+        when(sentinelGate.evaluate(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new SentinelGate.Outcome.Proceed(SentinelClientResult.DecisionPath.EXPLICIT_ALLOW));
+        when(strikeSelectorService.selectFor(eq("SPY"), any(), eq(OptionSide.CALL), eq(SESSION)))
+                .thenReturn(new StrikeSelectionResult.NoCandidates("empty_chain"));
+
+        TradeSaga.Result result = saga.run(twoMinBar(), bullishSnapshot(), levels());
+
+        // The Sentinel allowed; the saga proceeded to StrikeSelector and
+        // skipped on NO_STRIKE — confirming the Allow path threads through.
+        assertThat(((TradeSaga.Result.Skipped) result).event().stage()).isEqualTo(TradeSkipped.STAGE_NO_STRIKE);
+    }
+
+    @Test
+    void proceedsToStrikeSelectorWhenSentinelFallsBack() {
+        // ADR-0007 §3 fail-OPEN — a Fallback Outcome must NOT halt the saga.
+        // The gate emits Outcome.Proceed(FALLBACK_ALLOW) on Fallback; the
+        // saga therefore advances to StrikeSelector exactly like Allow.
+        when(sessionService.currentState(TENANT)).thenReturn(SessionState.TRADING);
+        when(signalEvaluator.evaluate(any(), any(), any())).thenReturn(callEntry());
+        when(riskService.canTakeTrade(TENANT)).thenReturn(true);
+        when(sentinelGate.evaluate(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new SentinelGate.Outcome.Proceed(SentinelClientResult.DecisionPath.FALLBACK_ALLOW));
+        when(strikeSelectorService.selectFor(eq("SPY"), any(), eq(OptionSide.CALL), eq(SESSION)))
+                .thenReturn(new StrikeSelectionResult.NoCandidates("empty_chain"));
+
+        TradeSaga.Result result = saga.run(twoMinBar(), bullishSnapshot(), levels());
+
+        assertThat(((TradeSaga.Result.Skipped) result).event().stage()).isEqualTo(TradeSkipped.STAGE_NO_STRIKE);
+    }
+
     // ---- Strike selection --------------------------------------------------
 
     @Test
@@ -297,6 +366,7 @@ class TradeSagaTest {
                 sessionService,
                 signalEvaluator,
                 riskService,
+                sentinelGate,
                 strikeSelectorService,
                 tradeService,
                 clock,
