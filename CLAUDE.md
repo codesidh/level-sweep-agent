@@ -11,7 +11,7 @@
 5. **Determinism is the contract.** Decision Engine changes must preserve replay parity (≥ 99% on 30 historical sessions).
 6. **Never log or commit credentials.** Alpaca tokens live encrypted in Key Vault, scoped per tenant.
 7. **No real money in tests.** All tests run against Alpaca paper or mocks.
-8. **Per-phase production-readiness gate.** Every build phase ships to Azure dev and soaks ≥5 RTH sessions against the live external deps it introduces (Alpaca SIP stocks WS at Phase 1, Alpaca options + execution at Phase 3, Anthropic at Phase 4, …) **before** the next phase's PRs can merge. See `architecture-spec.md` §21.1. P0/P1 incidents during soak reset the counter.
+8. **Scope-gated soak — not phase-gated.** Every build phase ships to Azure dev and soaks ≥5 RTH sessions against the live external deps it introduces (Alpaca SIP stocks WS at Phase 1, Alpaca options + execution at Phase 3, Anthropic at Phase 4, …). P0/P1 incidents during soak reset the counter. A subsequent-phase PR may merge to `main` while a prior phase is still soaking **iff all three conditions hold**: (a) it doesn't modify any service currently in active soak (or its Helm chart, deploy workflow, or container image); (b) it doesn't change shared infrastructure used by the soaking service (Strimzi/Kafka topology, AKS network policy, DataSource shape, Key Vault layout); (c) any newly exposed runtime path stays default-OFF behind a feature flag (already required by guardrail #1 for Phase B; extended here to Phase A overlaps). Scope-failing PRs land on a long-lived `staging/<phase>` branch with full CI but no main merge until the relevant soak clears. See `architecture-spec.md` §21.1.
 
 ## 📚 Authoritative Docs (read before coding)
 
