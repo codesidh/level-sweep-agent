@@ -308,3 +308,89 @@ jobs:
         run: |
           kubectl -n ai-agent rollout status deployment/ai-agent-service --timeout=5m
           kubectl -n ai-agent get pods,svc
+
+  # ---------------------------------------------------------------------------
+  # Phase 6 — journal-service deploy. Mirrors the ai-agent-service job above.
+  # Lives in its own namespace `journal-service` so a failed deploy of one
+  # service does not block the others. The federated-identity binding for
+  # the SA
+  #   system:serviceaccount:journal-service:journal-service
+  # is created by `infra/environments/dev/main.tf` →
+  # azurerm_federated_identity_credential.journal_service_sa, which must be
+  # applied by iac.yml before this job runs successfully against a fresh
+  # cluster.
+  #
+  # No KV secret pre-mirroring is required for Phase 6 — the only KV object
+  # mounted is the App Insights connection string (already mirrored from
+  # the Phase 1 bootstrap). Mongo URL is in-cluster plain-text in env until
+  # Phase 7 swaps in managed Cosmos / MongoDB Atlas per architecture-spec
+  # §13.2.
+  # ---------------------------------------------------------------------------
+  deploy-journal-service:
+    name: deploy journal-service to dev
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+
+    steps:
+      # On workflow_run, checkout defaults to the default branch tip — pin to
+      # the head_sha that main.yml just built so the chart and the image are
+      # in lockstep.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Install kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.1.4
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
+
+      - name: Resolve image tag SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "value=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Helm upgrade --install
+        run: |
+          helm upgrade --install journal-service deploy/helm/journal-service \
+            --namespace journal-service \
+            --create-namespace \
+            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/journal-service" \
+            --set image.tag="${{ steps.sha.outputs.value }}" \
+            --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
+            --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+            --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
+            --set keyVault.vaultUri="${{ secrets.KEY_VAULT_URI }}" \
+            --set appInsights.connectionStringSecretName=applicationinsights-connection-string \
+            --wait \
+            --timeout 5m
+
+      - name: Verify rollout
+        run: |
+          kubectl -n journal-service rollout status deployment/journal-service --timeout=5m
+          kubectl -n journal-service get pods,svc

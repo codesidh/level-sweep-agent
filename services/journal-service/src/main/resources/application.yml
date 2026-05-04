@@ -1,54 +1,129 @@
-quarkus:
+# =============================================================================
+# journal-service — Spring Boot 3.x cold-path configuration.
+#
+# Overrides resolved in this order (Spring Boot 3.x):
+#   1) application.yml (this file) — defaults
+#   2) application-{profile}.yml — per-profile (loaded by spring.profiles.active)
+#   3) The trailing `---` document below — activated only under the `test` profile
+#
+# Per architecture-spec §6 the journal is "CP for write, AP for query":
+# auto-offset-reset=earliest so a freshly deployed pod reads the full audit
+# history; reads tolerate secondary lag. Phase 7 will swap to a managed Mongo
+# (Cosmos / Atlas) and add a read-replica for the GET endpoint.
+# =============================================================================
+spring:
   application:
     name: journal-service
-  http:
-    port: 8085
-  log:
-    level: INFO
-    category:
-      "com.levelsweep":
-        level: INFO
-    console:
-      json:
-        ~: true
-        additional-field:
-          "tenant_id":
-            value: "${TENANT_ID:OWNER}"
-            type: "string"
-          "service":
-            value: "journal-service"
-            type: "string"
-  opentelemetry:
-    enabled: true
-    tracer:
-      exporter:
-        otlp:
-          endpoint: "${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}"
-  micrometer:
-    export:
-      prometheus:
-        enabled: true
-        path: /q/metrics
-  datasource:
-    db-kind: mssql
-    username: "${MSSQL_USER:sa}"
-    password: "${MSSQL_PASSWORD:LevelSweep!2026}"
-    jdbc:
-      url: "${MSSQL_URL:jdbc:sqlserver://localhost:1433;databaseName=level_sweep;encrypt=false}"
-  mongodb:
-    connection-string: "${MONGO_URL:mongodb://localhost:27017}"
-    database: "${MONGO_DB:level_sweep}"
+  data:
+    mongodb:
+      uri: ${MONGO_URL:mongodb://localhost:27017/level_sweep}
+      database: ${MONGO_DB:level_sweep}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: journal-service
+      # CAP §6: journal needs the full audit history per partition. A new pod
+      # must NOT skip ahead to the head of the log — it must replay from the
+      # earliest offset still in retention (365d per architecture-spec §12.1).
+      auto-offset-reset: earliest
+      # Spring Kafka commits synchronously after the listener method returns
+      # successfully; never auto-commit on a poll boundary because that would
+      # ack messages the journal hasn't yet persisted to Mongo.
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # JsonDeserializer requires an explicit allowlist to prevent RCE via a
+        # crafted payload; we trust only domain types from this codebase.
+        spring.json.trusted.packages: com.levelsweep.shared.domain.*
+        # Producers (execution-service) emit a flat record without a class
+        # type header; tell Spring not to look for one.
+        spring.json.use.type.headers: false
 
-kafka:
-  bootstrap:
-    servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
+server:
+  port: 8085
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Prometheus scrape + K8s liveness/readiness probes both pull off
+        # /actuator. Health probes are split out below.
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    mongo:
+      # Spring Boot Actuator's MongoHealthIndicator is built-in; pings the
+      # Mongo deployment on every readiness probe. K8s pulls the pod out of
+      # service when Mongo is unreachable instead of letting it ack Kafka
+      # messages it can't persist.
+      enabled: true
+
+# Application-level config namespace — promote to a typed
+# @ConfigurationProperties when this section grows past 5 keys.
+journal:
+  kafka:
+    events:
+      # Toggle the tenant.events.* listeners on/off. Default true so the
+      # consumer auto-starts and idles harmlessly until producers ship.
+      # Operators can flip this to false in dev clusters that don't have
+      # Kafka deployed yet (Phase 6 — Strimzi is on staging branch).
+      enabled: true
 
 levelsweep:
   tenant:
     bootstrap-id: OWNER
-  log:
-    mdc-keys:
-      - tenant_id
-      - trace_id
-      - fsm_name
-      - fsm_id
+
+logging:
+  level:
+    root: INFO
+    com.levelsweep: INFO
+    # Spring Kafka's container is chatty at INFO during partition-rebalance
+    # storms; the listener-thread log lines we care about come from our own
+    # code at INFO. Quiet the framework one notch.
+    org.springframework.kafka.listener: WARN
+    org.apache.kafka.clients.consumer: WARN
+
+---
+# =============================================================================
+# %test profile — disables Kafka + Mongo so unit tests never touch a real
+# external dependency. Pure POJO + Mockito + @WebMvcTest only (no
+# testcontainers in Phase 6 per the constraints).
+#
+# Spring Boot's auto-configured KafkaAutoConfiguration / MongoAutoConfiguration
+# are still loaded by the slice tests, but the test code mocks their beans
+# (MongoTemplate, AuditRepository, etc.) before they're invoked. Pointing the
+# Mongo URI at a deliberately-fake host means even an accidental real call
+# fails fast with a connection refused, surfacing the missing mock.
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: test
+  kafka:
+    bootstrap-servers: ""
+  data:
+    mongodb:
+      uri: mongodb://test-not-a-real-host:27017/test_level_sweep
+      database: test_level_sweep
+  autoconfigure:
+    # Skip the Mongo health indicator under the test profile so a slice test
+    # that boots only the controller layer doesn't fail readiness because
+    # MongoTemplate isn't a real connection.
+    exclude:
+      - org.springframework.boot.actuate.autoconfigure.data.mongo.MongoHealthContributorAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.data.mongo.MongoReactiveHealthContributorAutoConfiguration
+
+journal:
+  kafka:
+    events:
+      # Off in tests so the listener container doesn't try to connect on boot.
+      enabled: false

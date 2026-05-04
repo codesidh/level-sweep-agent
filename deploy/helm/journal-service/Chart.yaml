@@ -1,0 +1,6 @@
+apiVersion: v2
+name: journal-service
+description: Phase 6 Journal Service — cold-path audit aggregator (Spring Boot 3.x). Subscribes to tenant.fills (live) + tenant.events.* (gap-stubbed); writes audit_log.events Mongo collection; serves GET /journal/{tenantId}.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

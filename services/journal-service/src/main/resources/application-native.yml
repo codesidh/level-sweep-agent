@@ -1,7 +1,0 @@
-quarkus:
-  log:
-    console:
-      json:
-        ~: true
-  native:
-    enabled: true

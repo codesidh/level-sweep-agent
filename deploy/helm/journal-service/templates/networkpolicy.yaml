@@ -1,0 +1,70 @@
+{{- if .Values.networkPolicy.enabled }}
+# =============================================================================
+# Phase 6 NetworkPolicy. Mirrors the ai-agent-service / execution-service
+# pattern — permissive but non-zero. Phase 7 tightens egress to specific
+# FQDNs / Azure service tags.
+#
+# Ingress: HTTP from anywhere in the same namespace (the BFF / api-gateway
+# is the primary client of GET /journal/{tenantId}). Phase 7 narrows this
+# to only the BFF SA via `from.podSelector` once the BFF is deployed.
+#
+# Egress:
+#   - DNS to kube-system (kube-dns)
+#   - HTTPS anywhere (App Insights ingest, KV CSI driver)
+#   - Same-ns Kafka (9092) and Mongo (27017) — the Strimzi cluster + Mongo
+#     deployment land in this same namespace in Phase 6/7.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "journal-service.fullname" . }}
+  labels:
+    {{- include "journal-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "journal-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - port: {{ .Values.service.port }}
+          protocol: TCP
+  egress:
+    # DNS — kube-dns lives in kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # HTTPS to anywhere — KV CSI driver, App Insights ingest. Phase 7
+    # tightens this to a per-FQDN allowlist.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+    # Kafka brokers + Mongo on intra-cluster service ports — the Phase 6
+    # Strimzi cluster + dev Mongo live in this same namespace once they
+    # land, so allow same-ns egress on the relevant ports without
+    # overcommitting the policy.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - port: 9092
+          protocol: TCP
+        - port: 27017
+          protocol: TCP
+{{- end }}

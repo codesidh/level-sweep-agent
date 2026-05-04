@@ -223,6 +223,26 @@ resource "azurerm_federated_identity_credential" "ai_agent_service_sa" {
   subject             = "system:serviceaccount:ai-agent:ai-agent-service"
 }
 
+# Phase 6: journal-service (cold-path Spring Boot 3.x) binds to the same
+# kubelet MI via its own federated credential. Subject must match the
+# deploy-dev.yml `--namespace` + ServiceAccount name produced by the Helm
+# chart (`system:serviceaccount:journal-service:journal-service`). The
+# service runs at 200m CPU / 512 MiB requests — half the footprint of the
+# Quarkus hot-paths — so the existing 2 × Standard_D2s_v4 cluster has the
+# headroom (~3.5 GiB used across all four service pods of 16 GiB
+# available). Phase 7 splits this off into a dedicated per-service
+# workload MI alongside market-data-service / execution-service /
+# ai-agent-service AND revisits the node-pool size once decision-engine
+# and the remaining cold-path Spring services land.
+resource "azurerm_federated_identity_credential" "journal_service_sa" {
+  name                = "fc-${var.project}-${local.environment}-journal-service"
+  resource_group_name = module.aks.cluster_resource_group
+  parent_id           = module.aks.kubelet_user_assigned_identity_id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = module.aks.oidc_issuer_url
+  subject             = "system:serviceaccount:journal-service:journal-service"
+}
+
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
   scope                = module.keyvault.kv_id
   role_definition_name = "Key Vault Secrets User"
