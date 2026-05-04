@@ -1,6 +1,7 @@
 package com.levelsweep.aiagent.cost;
 
 import com.levelsweep.aiagent.anthropic.AnthropicRequest.Role;
+import com.levelsweep.aiagent.observability.AiAgentMetrics;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
@@ -52,6 +53,7 @@ public class DailyCostTracker {
     private final DailyCostMongoRepository repository;
     private final Clock clock;
     private final Map<Role, BigDecimal> caps;
+    private final AiAgentMetrics metrics;
 
     /** {@code (tenantId, role, date) -> accumulated cost (USD)}. */
     private final ConcurrentHashMap<Key, BigDecimal> spend = new ConcurrentHashMap<>();
@@ -63,6 +65,7 @@ public class DailyCostTracker {
     public DailyCostTracker(
             DailyCostMongoRepository repository,
             Clock clock,
+            AiAgentMetrics metrics,
             @ConfigProperty(name = "anthropic.cost-cap-usd-per-tenant-per-day.sentinel", defaultValue = "1.00")
                     BigDecimal sentinelCap,
             @ConfigProperty(name = "anthropic.cost-cap-usd-per-tenant-per-day.narrator", defaultValue = "1.00")
@@ -73,6 +76,7 @@ public class DailyCostTracker {
                     BigDecimal reviewerCap) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
         Map<Role, BigDecimal> capsMap = new EnumMap<>(Role.class);
         capsMap.put(Role.SENTINEL, requireNonNegative(sentinelCap, "sentinelCap"));
         capsMap.put(Role.NARRATOR, requireNonNegative(narratorCap, "narratorCap"));
@@ -135,6 +139,15 @@ public class DailyCostTracker {
         // still holds for the JVM's lifetime; repository logs warn). Write
         // is per-call so partial-day state survives a crash.
         repository.append(tenantId, role, date, costUsd, Instant.now(clock));
+        // Phase 4 alerts hook — surface per-(tenant, role) accumulator to
+        // Micrometer so the App Insights agent can ship the gauge as
+        // customMetrics{name="ai_cost_daily_total_usd"}. Best-effort: a metrics
+        // failure must never block the cost bookkeeping.
+        try {
+            metrics.recordCostUpdate(tenantId, role, date, newTotal);
+        } catch (RuntimeException e) {
+            LOG.warn("daily cost tracker metrics emit failed tenantId={} role={}: {}", tenantId, role, e.toString());
+        }
         return newTotal;
     }
 

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.levelsweep.aiagent.observability.AiAgentMetrics;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -65,7 +66,8 @@ class DailyReviewerSchedulerTest {
     @BeforeEach
     void setUp() {
         clock = Clock.fixed(NOW, ET);
-        scheduler = new DailyReviewerScheduler(clock, aggregator, reviewer, repository, TENANT, MODEL);
+        scheduler = new DailyReviewerScheduler(
+                clock, aggregator, reviewer, repository, AiAgentMetrics.noop(), TENANT, MODEL);
     }
 
     @Test
@@ -179,8 +181,8 @@ class DailyReviewerSchedulerTest {
         // 03:00 UTC on 2026-05-03 = 23:00 ET on 2026-05-02. The session date
         // for the EOD reviewer is the ET local date, not the UTC date.
         Clock lateClock = Clock.fixed(Instant.parse("2026-05-03T03:00:00Z"), ET);
-        DailyReviewerScheduler lateScheduler =
-                new DailyReviewerScheduler(lateClock, aggregator, reviewer, repository, TENANT, MODEL);
+        DailyReviewerScheduler lateScheduler = new DailyReviewerScheduler(
+                lateClock, aggregator, reviewer, repository, AiAgentMetrics.noop(), TENANT, MODEL);
         when(aggregator.aggregate(any(), any())).thenReturn(emptyRequest());
         when(reviewer.review(any())).thenReturn(Optional.of(completedReport()));
 

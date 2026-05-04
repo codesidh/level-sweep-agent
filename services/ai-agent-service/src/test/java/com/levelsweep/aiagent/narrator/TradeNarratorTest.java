@@ -15,6 +15,7 @@ import com.levelsweep.aiagent.anthropic.AnthropicRequest.Role;
 import com.levelsweep.aiagent.anthropic.AnthropicResponse;
 import com.levelsweep.aiagent.audit.AiCallAuditWriter;
 import com.levelsweep.aiagent.cost.DailyCostTracker;
+import com.levelsweep.aiagent.observability.AiAgentMetrics;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -68,7 +69,8 @@ class TradeNarratorTest {
 
     @BeforeEach
     void setUp() {
-        narrator = new TradeNarrator(anthropicClient, costTracker, auditWriter, FIXED_CLOCK, MODEL);
+        narrator = new TradeNarrator(
+                anthropicClient, costTracker, auditWriter, AiAgentMetrics.noop(), FIXED_CLOCK, MODEL);
         // Default: ample budget, never blocked.
         when(costTracker.today()).thenReturn(LocalDate.of(2026, 5, 2));
         // wouldExceedCap default → false. We pin per-test when we need true.

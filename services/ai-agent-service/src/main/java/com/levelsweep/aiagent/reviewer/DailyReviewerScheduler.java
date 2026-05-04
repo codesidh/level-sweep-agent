@@ -1,5 +1,6 @@
 package com.levelsweep.aiagent.reviewer;
 
+import com.levelsweep.aiagent.observability.AiAgentMetrics;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -71,6 +72,7 @@ public class DailyReviewerScheduler {
     private final SessionJournalAggregator aggregator;
     private final DailyReviewer reviewer;
     private final DailyReportRepository repository;
+    private final AiAgentMetrics metrics;
     private final String tenantId;
     private final String model;
 
@@ -80,12 +82,14 @@ public class DailyReviewerScheduler {
             SessionJournalAggregator aggregator,
             DailyReviewer reviewer,
             DailyReportRepository repository,
+            AiAgentMetrics metrics,
             @ConfigProperty(name = "levelsweep.tenant.bootstrap-id", defaultValue = "OWNER") String tenantId,
             @ConfigProperty(name = "anthropic.models.reviewer", defaultValue = "claude-opus-4-7") String model) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.aggregator = Objects.requireNonNull(aggregator, "aggregator");
         this.reviewer = Objects.requireNonNull(reviewer, "reviewer");
         this.repository = Objects.requireNonNull(repository, "repository");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.tenantId = Objects.requireNonNull(tenantId, "tenantId");
         this.model = Objects.requireNonNull(model, "model");
     }
@@ -154,6 +158,9 @@ public class DailyReviewerScheduler {
                     result.get().outcome(),
                     result.get().totalTokensUsed(),
                     result.get().costUsd().toPlainString());
+            // Phase 4 alerts hook — emit a counter increment so the App Insights
+            // alert "reviewer didn't run" stays quiet on successful fires.
+            safeReviewerComplete(AiAgentMetrics.ReviewerRunOutcome.COMPLETED);
             return;
         }
 
@@ -171,6 +178,26 @@ public class DailyReviewerScheduler {
                 tenantId,
                 sessionDate,
                 stub.outcome());
+        // Even on a skip we emit the alert hook — the alert fires when the
+        // counter is 0 in the 16:30-17:00 ET window per tenant. A skipped
+        // run still means "the cron fired"; the audit trail (ai_calls log)
+        // and the persisted stub report carry the WHY. The narrator-skip
+        // alert is the right place to catch silent narrator failures; the
+        // reviewer alert is strictly a "cron didn't fire" guard.
+        safeReviewerComplete(AiAgentMetrics.ReviewerRunOutcome.SKIPPED);
+    }
+
+    /** Best-effort metric emit — a meter failure must never break the cron loop. */
+    private void safeReviewerComplete(AiAgentMetrics.ReviewerRunOutcome outcome) {
+        try {
+            metrics.reviewerRunComplete(tenantId, outcome);
+        } catch (RuntimeException e) {
+            LOG.warn(
+                    "daily reviewer metrics emit failed tenantId={} outcome={}: {}",
+                    tenantId,
+                    outcome.label(),
+                    e.toString());
+        }
     }
 
     private void persist(DailyReport report, LocalDate sessionDate) {
