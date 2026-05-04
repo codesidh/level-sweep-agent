@@ -164,8 +164,7 @@ class AiAgentMetricsTest {
                 .isThrownBy(() -> metrics.recordCostUpdate(TENANT, null, TODAY, BigDecimal.ZERO));
         assertThatNullPointerException()
                 .isThrownBy(() -> metrics.recordCostUpdate(TENANT, Role.NARRATOR, null, BigDecimal.ZERO));
-        assertThatNullPointerException()
-                .isThrownBy(() -> metrics.recordCostUpdate(TENANT, Role.NARRATOR, TODAY, null));
+        assertThatNullPointerException().isThrownBy(() -> metrics.recordCostUpdate(TENANT, Role.NARRATOR, TODAY, null));
         assertThatNullPointerException()
                 .isThrownBy(() -> metrics.narratorSkipped(null, AiAgentMetrics.NarratorSkipReason.COST_CAP));
         assertThatNullPointerException().isThrownBy(() -> metrics.narratorSkipped(TENANT, null));
