@@ -66,7 +66,7 @@ public class DailyCostTracker {
             DailyCostMongoRepository repository,
             Clock clock,
             AiAgentMetrics metrics,
-            @ConfigProperty(name = "anthropic.cost-cap-usd-per-tenant-per-day.sentinel", defaultValue = "1.00")
+            @ConfigProperty(name = "anthropic.cost-cap-usd-per-tenant-per-day.sentinel", defaultValue = "0.50")
                     BigDecimal sentinelCap,
             @ConfigProperty(name = "anthropic.cost-cap-usd-per-tenant-per-day.narrator", defaultValue = "1.00")
                     BigDecimal narratorCap,
