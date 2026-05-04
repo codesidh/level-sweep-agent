@@ -29,9 +29,15 @@ include(":services:market-data-service")
 include(":services:decision-engine")
 include(":services:execution-service")
 include(":services:ai-agent-service")
-include(":services:journal-service")
 
 // --- Cold-path services (Spring Boot) ---
+// Note: journal-service was originally Phase 0-skeletoned under Quarkus but
+// Phase 6 ships it as Spring Boot 3.x per CLAUDE.md tech stack ("Spring Boot
+// 3.x for cold-path services"). The CAP profile (architecture-spec §6) is
+// "CP for write, AP for query" — long-running batch ingest, not a hot path,
+// so Quarkus brings no benefit while spring-kafka + Spring Data MongoDB give
+// us idiomatic infra in a single starter set.
+include(":services:journal-service")
 include(":services:user-config-service")
 include(":services:projection-service")
 include(":services:calendar-service")
