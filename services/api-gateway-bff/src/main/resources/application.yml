@@ -1,48 +1,118 @@
+# =============================================================================
+# api-gateway-bff — Spring Boot 3.x edge configuration (Phase 6).
+#
+# SERVLET stack (NOT WebFlux) — see services/api-gateway-bff/build.gradle.kts
+# header for the rationale. The Phase 0 skeleton's reactive web-application-
+# type setting was incompatible with the new spring-boot-starter-web
+# dependency; removing it lets Spring Boot 3.x auto-detect servlet from the
+# starter.
+#
+# Port allocation per architecture-spec §9 service map (Phase 6 cold-path):
+#   8081 — market-data-service       (Quarkus)
+#   8082 — decision-engine           (Quarkus)
+#   8083 — execution-service         (Quarkus)
+#   8084 — ai-agent-service          (Quarkus)
+#   8085 — journal-service           (Spring Boot)
+#   8086 — user-config-service       (Spring Boot)
+#   8087 — projection-service        (Spring Boot)
+#   8088 — calendar-service          (Spring Boot)
+#   8089 — notification-service      (Spring Boot)
+#   8090 — api-gateway-bff           (Spring Boot, this file)
+# =============================================================================
 spring:
   application:
     name: api-gateway-bff
   main:
     banner-mode: off
-    web-application-type: reactive
   security:
     oauth2:
       resourceserver:
         jwt:
+          # Phase B values — UNUSED while phase-b-jwt-auth=false. Setting
+          # them ahead of time means the Phase A→B flip is a single feature
+          # flag toggle, not a redeploy with new env vars. Defaults are
+          # placeholders that will fail loudly if anyone tries to validate
+          # against them.
           issuer-uri: "${AUTH0_ISSUER:https://example.auth0.com/}"
           audiences:
             - "${AUTH0_AUDIENCE:https://api.levelsweep.local}"
-  cloud:
-    gateway:
-      # Phase 0 — empty route table. Phase 6 wires actual routes per architecture-spec §16.4.
-      routes: []
-      default-filters: [ ]
 
 server:
-  port: 8080
+  port: 8090
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,gateway
+        include: health, info, metrics, prometheus
   endpoint:
     health:
       probes:
         enabled: true
-
-logging:
-  level:
-    root: INFO
-    com.levelsweep: INFO
-    # Spring Cloud Gateway is chatty at INFO; keep at WARN.
-    org.springframework.cloud.gateway: WARN
-  pattern:
-    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-},user_id=%X{user_id:-}]'
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
 
 levelsweep:
   tenant:
     bootstrap-id: OWNER
   feature-flags:
+    # Phase B JWT validation — flips on AFTER legal counsel completes RIA /
+    # broker-dealer review (CLAUDE.md guardrail #1). Default OFF.
+    phase-b-jwt-auth: false
     phase-b-multi-tenant-onboarding: false
     phase-b-public-signup: false
     phase-b-alpaca-oauth: false
+  rate-limit:
+    # Per-tenant token bucket — architecture-spec §12.4. Phase A:
+    # 100 req/min/tenant in-process; Phase 7 swaps to APIM external at
+    # the same policy.
+    capacity: 100
+    refill-period-seconds: 60
+  downstream:
+    # Each downstream URL is sourced from env so the deploy workflow can
+    # point at the per-environment service DNS (Phase 6 dev:
+    # http://journal-service.journal-service.svc.cluster.local:8085 etc.).
+    # Local dev defaults assume `kubectl port-forward` to localhost:80xx
+    # OR a docker-compose stack with the same hostnames.
+    journal-url: "${JOURNAL_SERVICE_URL:http://localhost:8085}"
+    user-config-url: "${USER_CONFIG_SERVICE_URL:http://localhost:8086}"
+    projection-url: "${PROJECTION_SERVICE_URL:http://localhost:8087}"
+    calendar-url: "${CALENDAR_SERVICE_URL:http://localhost:8088}"
+
+logging:
+  level:
+    root: INFO
+    com.levelsweep: INFO
+  pattern:
+    correlation: '[tenant_id=%X{tenant_id:-OWNER},trace_id=%X{trace_id:-},user_id=%X{user_id:-}]'
+
+---
+# =============================================================================
+# %test profile — point the downstream URLs at deliberately-fake hosts so
+# unit tests don't accidentally hit a real service. The slice tests mock the
+# RestClient directly; this profile is for full-context / smoke tests.
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: test
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: "https://test-not-a-real-host.example.com/"
+          audiences:
+            - "https://api.levelsweep.local"
+
+levelsweep:
+  feature-flags:
+    phase-b-jwt-auth: false
+  downstream:
+    journal-url: "http://test-journal-not-a-real-host:8085"
+    user-config-url: "http://test-user-config-not-a-real-host:8086"
+    projection-url: "http://test-projection-not-a-real-host:8087"
+    calendar-url: "http://test-calendar-not-a-real-host:8088"

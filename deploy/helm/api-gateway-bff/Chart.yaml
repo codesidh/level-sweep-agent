@@ -1,0 +1,6 @@
+apiVersion: v2
+name: api-gateway-bff
+description: Phase 6 API Gateway / BFF — edge Spring Boot 3.x Backend-for-Frontend. Single ingress for the Angular dashboard; Phase A bypass-auth via X-Tenant-Id header (Phase B JWT validation behind feature flag); routes to journal/user-config/projection/calendar; per-tenant rate limit (100 req/min/tenant); fan-out aggregation at /api/dashboard/{tenantId}/summary.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
