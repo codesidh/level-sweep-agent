@@ -1,0 +1,39 @@
+{
+  "name": "pml_long_put_explicit_allow",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_004",
+    "signal_id": "SIG_REPLAY_004",
+    "direction": "LONG_PUT",
+    "level_swept": "PML",
+    "indicator_snapshot": {
+      "ema13": "486.4000",
+      "ema48": "488.7500",
+      "ema200": "493.2000",
+      "atr14": "1.45",
+      "rsi2": "31.80",
+      "regime": "BEAR",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:31:00Z", "close": "487.0000", "volume": 11500 },
+        { "ts": "2026-05-04T13:33:00Z", "close": "486.5000", "volume": 12200 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "486.0000", "volume": 13400 }
+      ]
+    },
+    "recent_trades_window": [
+      { "trade_id": "TR_PRIOR_020", "outcome": "BE", "r_multiple": "0.0", "ts": "2026-05-04T12:50:00Z" }
+    ],
+    "vix_close_prev": "18.40",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 200,
+    "body": "{\"id\":\"msg_replay_004\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"ALLOW\\\",\\\"confidence\\\":0.74,\\\"reason_code\\\":\\\"STRUCTURE_MATCH\\\",\\\"reason_text\\\":\\\"Pre-market low sweep with elevated VIX; bearish regime confirmed.\\\"}\"}],\"usage\":{\"input_tokens\":415,\"output_tokens\":43,\"cache_read_input_tokens\":0}}"
+  },
+  "expected": {
+    "type": "Allow",
+    "decision_path": "EXPLICIT_ALLOW",
+    "confidence": "0.74",
+    "reason_code": "STRUCTURE_MATCH",
+    "reason_text": "Pre-market low sweep with elevated VIX; bearish regime confirmed."
+  }
+}

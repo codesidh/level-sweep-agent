@@ -1,0 +1,42 @@
+{
+  "name": "recent_losses_veto_high_confidence",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_005",
+    "signal_id": "SIG_REPLAY_005",
+    "direction": "LONG_CALL",
+    "level_swept": "PDH",
+    "indicator_snapshot": {
+      "ema13": "500.5000",
+      "ema48": "499.7500",
+      "ema200": "496.0000",
+      "atr14": "1.30",
+      "rsi2": "55.80",
+      "regime": "BULL",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:31:00Z", "close": "500.2500", "volume": 9100 },
+        { "ts": "2026-05-04T13:33:00Z", "close": "500.5000", "volume": 9800 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "500.7500", "volume": 10300 }
+      ]
+    },
+    "recent_trades_window": [
+      { "trade_id": "TR_LOSS_001", "outcome": "LOSS", "r_multiple": "-1.0", "ts": "2026-05-04T11:30:00Z" },
+      { "trade_id": "TR_LOSS_002", "outcome": "LOSS", "r_multiple": "-1.0", "ts": "2026-05-04T12:00:00Z" },
+      { "trade_id": "TR_WIN_003",  "outcome": "WIN",  "r_multiple": "0.8",  "ts": "2026-05-04T12:30:00Z" },
+      { "trade_id": "TR_LOSS_004", "outcome": "LOSS", "r_multiple": "-1.2", "ts": "2026-05-04T13:00:00Z" },
+      { "trade_id": "TR_LOSS_005", "outcome": "LOSS", "r_multiple": "-0.9", "ts": "2026-05-04T13:20:00Z" }
+    ],
+    "vix_close_prev": "15.10",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 200,
+    "body": "{\"id\":\"msg_replay_005\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"VETO\\\",\\\"confidence\\\":0.92,\\\"reason_code\\\":\\\"RECENT_LOSSES\\\",\\\"reason_text\\\":\\\"4 of 5 recent trades are losses; tilt risk elevated.\\\"}\"}],\"usage\":{\"input_tokens\":480,\"output_tokens\":48,\"cache_read_input_tokens\":0}}"
+  },
+  "expected": {
+    "type": "Veto",
+    "confidence": "0.92",
+    "reason_code": "RECENT_LOSSES",
+    "reason_text": "4 of 5 recent trades are losses; tilt risk elevated."
+  }
+}

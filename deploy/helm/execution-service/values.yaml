@@ -61,7 +61,7 @@ env:
   # The trade-proposed-in incoming channel swaps to in-memory under %prod, so
   # a bogus bootstrap is safe in dev.
   KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
-  MONGO_URL: "mongodb://mongo:27017"
+  MONGO_URL: "mongodb://mongo.mongo.svc.cluster.local:27017"
   MONGO_DB: "level_sweep"
   MSSQL_URL: "jdbc:sqlserver://mssql:1433;databaseName=level_sweep;encrypt=false"
   MSSQL_USER: "sa"
@@ -75,6 +75,16 @@ env:
   # quarkus.opentelemetry.enabled is false under %prod, but kept so
   # configuration shape matches dev / replay where Quarkus OTel is on.
   OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  # Phase 5 S5 — forward-compat envs for the Pre-Trade Sentinel veto wire
+  # (ADR-0007). The actual REST client + saga step lives in decision-engine
+  # (§4.4 architecture-spec — saga is in decision-engine, not execution-
+  # service); these env vars are mirrored here so the deploy workflow's
+  # --set list stays symmetric across hot-path services and a future
+  # exit-side Sentinel hook (Phase 7+) can pick them up without a chart
+  # bump. Default OFF; the saga-side gate is also default OFF — defense
+  # in depth on both ends.
+  LEVELSWEEP_SENTINEL_ENABLED: "false"
+  LEVELSWEEP_AI_AGENT_URL: "http://ai-agent-service.ai-agent:8084"
 
 # Workload identity binding (Azure AD federated → K8s ServiceAccount).
 workloadIdentity:

@@ -72,7 +72,7 @@ env:
   # Mongo URL — managed Mongo lands in Phase 7 per architecture-spec §13.2.
   # Until then, in-cluster Mongo (deployed as a separate Helm release) is
   # the dev target.
-  MONGO_URL: "mongodb://mongo:27017/level_sweep"
+  MONGO_URL: "mongodb://mongo.mongo.svc.cluster.local:27017/level_sweep"
   MONGO_DB: "level_sweep"
   # Force the Spring profile to `prod` so the test-profile overrides
   # (empty Kafka bootstrap, fake Mongo URI, empty SMTP host) DON'T

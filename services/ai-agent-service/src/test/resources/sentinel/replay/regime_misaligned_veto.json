@@ -1,0 +1,38 @@
+{
+  "name": "regime_misaligned_veto",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_006",
+    "signal_id": "SIG_REPLAY_006",
+    "direction": "LONG_CALL",
+    "level_swept": "PDH",
+    "indicator_snapshot": {
+      "ema13": "497.5000",
+      "ema48": "499.2500",
+      "ema200": "503.0000",
+      "atr14": "1.55",
+      "rsi2": "42.30",
+      "regime": "BEAR",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:31:00Z", "close": "498.0000", "volume": 8800 },
+        { "ts": "2026-05-04T13:33:00Z", "close": "497.7500", "volume": 9200 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "497.5000", "volume": 9600 }
+      ]
+    },
+    "recent_trades_window": [
+      { "trade_id": "TR_PRIOR_030", "outcome": "WIN", "r_multiple": "1.1", "ts": "2026-05-04T12:00:00Z" }
+    ],
+    "vix_close_prev": "21.30",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 200,
+    "body": "{\"id\":\"msg_replay_006\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"VETO\\\",\\\"confidence\\\":0.88,\\\"reason_code\\\":\\\"REGIME_MISALIGNED\\\",\\\"reason_text\\\":\\\"Bullish signal directly counter to BEAR regime and EMA200 resistance overhead.\\\"}\"}],\"usage\":{\"input_tokens\":425,\"output_tokens\":52,\"cache_read_input_tokens\":0}}"
+  },
+  "expected": {
+    "type": "Veto",
+    "confidence": "0.88",
+    "reason_code": "REGIME_MISALIGNED",
+    "reason_text": "Bullish signal directly counter to BEAR regime and EMA200 resistance overhead."
+  }
+}

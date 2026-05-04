@@ -1,0 +1,33 @@
+{
+  "name": "transport_fallback",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_009",
+    "signal_id": "SIG_REPLAY_009",
+    "direction": "LONG_PUT",
+    "level_swept": "PDL",
+    "indicator_snapshot": {
+      "ema13": "489.0000",
+      "ema48": "490.5000",
+      "ema200": "494.0000",
+      "atr14": "1.40",
+      "rsi2": "30.00",
+      "regime": "BEAR",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:33:00Z", "close": "489.5000", "volume": 10500 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "489.0000", "volume": 11200 }
+      ]
+    },
+    "recent_trades_window": [],
+    "vix_close_prev": "16.50",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 0,
+    "body": "java.net.ConnectException: Connection refused"
+  },
+  "expected": {
+    "type": "Fallback",
+    "fallback_reason": "TRANSPORT"
+  }
+}

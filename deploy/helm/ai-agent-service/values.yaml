@@ -64,7 +64,7 @@ env:
   # The trade-fills-in incoming channel swaps to in-memory under %prod, so
   # a bogus bootstrap is safe in dev.
   KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
-  MONGO_URL: "mongodb://mongo:27017"
+  MONGO_URL: "mongodb://mongo.mongo.svc.cluster.local:27017"
   MONGO_DB: "level_sweep"
   # Force the Quarkus profile to %prod so application.yml's
   # `quarkus.opentelemetry.enabled: false` override kicks in. The App
@@ -81,6 +81,13 @@ env:
   # filter on cloud_RoleName == "ai-agent-service" see zero rows
   # (the agent default is "unknown_service:java").
   OTEL_SERVICE_NAME: "ai-agent-service"
+  # Phase 5 S5 — Pre-Trade Sentinel feature flag (ADR-0007 §7). Default OFF
+  # — both the remote ai-agent-service and the decision-engine saga consult
+  # this flag (defense in depth). Operators flip both ON simultaneously
+  # only after the Phase 4 soak (5+ RTH sessions on real Anthropic) clears.
+  # The flag value drives `levelsweep.sentinel.enabled` via Quarkus' env
+  # binding (microprofile-config underscore-to-dot mapping).
+  LEVELSWEEP_SENTINEL_ENABLED: "false"
 
 # Workload identity binding (Azure AD federated → K8s ServiceAccount).
 workloadIdentity:

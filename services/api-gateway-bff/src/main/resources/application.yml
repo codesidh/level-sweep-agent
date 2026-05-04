@@ -82,6 +82,8 @@ levelsweep:
     user-config-url: "${USER_CONFIG_SERVICE_URL:http://localhost:8086}"
     projection-url: "${PROJECTION_SERVICE_URL:http://localhost:8087}"
     calendar-url: "${CALENDAR_SERVICE_URL:http://localhost:8088}"
+    # Phase 5 S6 — Conversational Assistant routes proxy to ai-agent-service.
+    ai-agent-url: "${AI_AGENT_SERVICE_URL:http://localhost:8084}"
 
 logging:
   level:
@@ -116,3 +118,4 @@ levelsweep:
     user-config-url: "http://test-user-config-not-a-real-host:8086"
     projection-url: "http://test-projection-not-a-real-host:8087"
     calendar-url: "http://test-calendar-not-a-real-host:8088"
+    ai-agent-url: "http://test-ai-agent-not-a-real-host:8084"

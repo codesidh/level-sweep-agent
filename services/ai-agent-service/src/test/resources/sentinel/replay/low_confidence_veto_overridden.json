@@ -1,0 +1,39 @@
+{
+  "name": "low_confidence_veto_overridden",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_007",
+    "signal_id": "SIG_REPLAY_007",
+    "direction": "LONG_CALL",
+    "level_swept": "PDH",
+    "indicator_snapshot": {
+      "ema13": "499.7500",
+      "ema48": "499.0000",
+      "ema200": "496.5000",
+      "atr14": "1.25",
+      "rsi2": "58.10",
+      "regime": "NEUTRAL",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:31:00Z", "close": "500.0000", "volume": 9500 },
+        { "ts": "2026-05-04T13:33:00Z", "close": "499.8500", "volume": 9700 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "500.1000", "volume": 9900 }
+      ]
+    },
+    "recent_trades_window": [
+      { "trade_id": "TR_PRIOR_040", "outcome": "WIN", "r_multiple": "0.5", "ts": "2026-05-04T12:30:00Z" }
+    ],
+    "vix_close_prev": "17.10",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 200,
+    "body": "{\"id\":\"msg_replay_007\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"VETO\\\",\\\"confidence\\\":0.80,\\\"reason_code\\\":\\\"STRUCTURE_DIVERGENCE\\\",\\\"reason_text\\\":\\\"EMA13 crossing EMA48 from below but momentum unclear.\\\"}\"}],\"usage\":{\"input_tokens\":418,\"output_tokens\":44,\"cache_read_input_tokens\":0}}"
+  },
+  "expected": {
+    "type": "Allow",
+    "decision_path": "LOW_CONFIDENCE_VETO_OVERRIDDEN",
+    "confidence": "0.80",
+    "reason_code": "STRUCTURE_DIVERGENCE",
+    "reason_text": "EMA13 crossing EMA48 from below but momentum unclear."
+  }
+}

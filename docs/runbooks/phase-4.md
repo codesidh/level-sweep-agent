@@ -13,7 +13,7 @@ This runbook covers the alerts the operator will need during the Phase 4 paper-t
 | Readiness probe | `GET /q/health/ready` |
 | Prometheus metrics | `GET /q/metrics` |
 | Anthropic Messages API | `https://api.anthropic.com/v1/messages` |
-| Anthropic models (per role) | `claude-sonnet-4-6` (narrator), `claude-opus-4-7` (reviewer); Sentinel/Assistant land at Phase 5 |
+| Anthropic models (per role) | `claude-sonnet-4-6` (narrator), `claude-opus-4-7` (reviewer); Sentinel/Assistant land at Phase 5 (see [`docs/runbooks/phase-5.md`](phase-5.md), pending S7) |
 | Per-(tenant, role, day) cost cap | $1.00 narrator, $2.00 reviewer (architecture-spec §4.8); fail-closed pre-flight check before the HTTP call |
 | Logs (App Insights) | `traces \| where cloud_RoleName == "ai-agent-service"` |
 | Custom metrics (App Insights) | `customMetrics \| where cloud_RoleName == "ai-agent-service"` |

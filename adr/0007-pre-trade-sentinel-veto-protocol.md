@@ -1,6 +1,6 @@
 # ADR-0007: Pre-Trade Sentinel veto protocol
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-05-04
 **Deciders**: owner
 **Supersedes**: detail-fills ADR-0002 §"Pre-Trade Sentinel (advisory veto)" and `architecture-spec.md` §4.4. Lands the contract that Phase 5 implements; Phase 4's Narrator/Reviewer ADR-0006 is unaffected.
@@ -131,6 +131,19 @@ Replay harness behavior:
 ### Neutral
 
 - Sentinel is one of four AI roles. The ADR does not constrain Narrator (post-trade), Assistant (chat), or Reviewer (EOD batch) — those have their own latency / determinism profiles documented in ADR-0006.
+
+## Implementation references
+
+Status changed from `proposed` to `accepted` after Phase 5 implementation landed on `staging/phase-5`:
+
+- PR #114 — S2 SentinelDecisionRequest/Response + SentinelPromptBuilder + SentinelResponseParser + SENTINEL cost cap default
+- PR #116 — S1 Anthropic Connection FSM + AnthropicClient short-circuit on UNHEALTHY (emits `circuit_breaker_open`)
+- PR #117 — S6 Conversational Assistant (out-of-scope for Sentinel proper but lands the broader Phase 5)
+- PR #118 — S3 SentinelService orchestrator (cost-cap pre-flight + 750ms timeout + counter taxonomy + audit)
+- PR #120 — S4 Replay parity (11 fixtures, ≥99% target, fixture-backed Fetcher seam)
+- PR #121 — S5 Saga integration: SentinelResource (REST) in ai-agent-service + SentinelClient + SentinelGate + TradeSaga wiring in decision-engine + helm `LEVELSWEEP_SENTINEL_ENABLED` env
+
+`staging/phase-5` rebases onto `main` once Phase 3 + Phase 4 soaks clear (operator gate per CLAUDE.md guardrail #8).
 
 ## References
 

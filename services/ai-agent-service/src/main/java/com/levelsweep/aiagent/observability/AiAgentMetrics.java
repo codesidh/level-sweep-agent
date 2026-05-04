@@ -1,6 +1,7 @@
 package com.levelsweep.aiagent.observability;
 
 import com.levelsweep.aiagent.anthropic.AnthropicRequest.Role;
+import com.levelsweep.aiagent.connection.ConnectionMonitor;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,6 +90,49 @@ public class AiAgentMetrics {
     public static final String METER_NARRATOR_FIRED = "ai.narrator.fired";
     public static final String METER_REVIEWER_RUN_COMPLETE = "ai.reviewer.run.complete";
 
+    /**
+     * Pre-Trade Sentinel meters (ADR-0007 §3 + §6). The four labels collectively
+     * cover the published taxonomy:
+     *
+     * <ul>
+     *   <li>{@code ai.sentinel.allow{tenant_id, level_swept, decision_path}} —
+     *       counter on every Allow outcome; {@code decision_path} discriminates
+     *       explicit ALLOW vs low-confidence VETO override vs fail-OPEN.</li>
+     *   <li>{@code ai.sentinel.veto_applied{tenant_id, level_swept}} — counter
+     *       on every Veto (confidence ≥ 0.85). The saga compensation alert
+     *       fires off this meter.</li>
+     *   <li>{@code ai.sentinel.fallback{tenant_id, reason}} — counter on every
+     *       Fallback. Reason ∈ transport / rate_limit / cost_cap / parse /
+     *       timeout / cb_open.</li>
+     *   <li>{@code ai.sentinel.skipped{tenant_id, reason}} — counter when the
+     *       feature flag is OFF; reason is currently always {@code flag_off}.</li>
+     * </ul>
+     */
+    public static final String METER_SENTINEL_ALLOW = "ai.sentinel.allow";
+
+    public static final String METER_SENTINEL_VETO_APPLIED = "ai.sentinel.veto_applied";
+    public static final String METER_SENTINEL_FALLBACK = "ai.sentinel.fallback";
+    public static final String METER_SENTINEL_SKIPPED = "ai.sentinel.skipped";
+
+    /**
+     * Connection FSM gauge — per-dependency lifecycle state ordinal. The Phase 5
+     * S1 alert {@code anthropic_cb_unhealthy} (alert #11) keys off
+     * {@code customMetrics.connection_state} where
+     * {@code customDimensions.dependency == "anthropic"} and {@code value >= 2}.
+     * Phase 1 / Phase 3 use the same name for their own dependencies, so the
+     * dimension is the routing key.
+     */
+    public static final String METER_CONNECTION_STATE = "connection.state";
+
+    /** Phase 5 S6 — assistant chat success counter (tagged tenant_id). */
+    public static final String METER_ASSISTANT_FIRED = "ai.assistant.fired";
+
+    /** Phase 5 S6 — assistant chat failure counter (tagged tenant_id + reason). */
+    public static final String METER_ASSISTANT_FAILED = "ai.assistant.failed";
+
+    /** Phase 5 S6 — assistant token volume counter (tagged tenant_id + kind=input|output). */
+    public static final String METER_ASSISTANT_TOKENS = "ai.assistant.tokens";
+
     private final MeterRegistry registry;
 
     /**
@@ -97,6 +142,13 @@ public class AiAgentMetrics {
      * registration does not GC it.
      */
     private final ConcurrentHashMap<CostKey, AtomicReference<BigDecimal>> costRefs = new ConcurrentHashMap<>();
+
+    /**
+     * Per-dependency Connection FSM ordinal holder. Same per-key
+     * {@link AtomicInteger} pattern as {@link #costRefs} — register the gauge
+     * once per dependency, mutate the ref on subsequent observations.
+     */
+    private final ConcurrentHashMap<String, AtomicInteger> connectionStateRefs = new ConcurrentHashMap<>();
 
     @Inject
     public AiAgentMetrics(MeterRegistry registry) {
@@ -152,6 +204,35 @@ public class AiAgentMetrics {
         ref.set(currentSpendUsd);
     }
 
+    /**
+     * Update the per-dependency Connection FSM gauge. Called from the FSM
+     * wrapper (e.g.
+     * {@link com.levelsweep.aiagent.connection.AnthropicConnectionMonitor})
+     * whenever the underlying state transitions. Value is the ordinal:
+     * HEALTHY=0, DEGRADED=1, UNHEALTHY=2, RECOVERING=3 — matches the alert KQL
+     * threshold {@code value >= 2}.
+     *
+     * <p>Same per-key gauge-registration pattern as {@link #recordCostUpdate}:
+     * {@link AtomicInteger} held strongly in {@link #connectionStateRefs} so
+     * Micrometer's weak ref does not GC it; gauge registered exactly once per
+     * dependency.
+     */
+    public void recordConnectionState(String dependency, ConnectionMonitor.State state) {
+        Objects.requireNonNull(dependency, "dependency");
+        Objects.requireNonNull(state, "state");
+
+        AtomicInteger ref = connectionStateRefs.computeIfAbsent(dependency, k -> {
+            AtomicInteger r = new AtomicInteger(state.ordinal());
+            Gauge.builder(METER_CONNECTION_STATE, r, AtomicInteger::get)
+                    .description(
+                            "Per-dependency Connection FSM ordinal: HEALTHY=0, DEGRADED=1, UNHEALTHY=2, RECOVERING=3.")
+                    .tags(Tags.of("dependency", k))
+                    .register(registry);
+            return r;
+        });
+        ref.set(state.ordinal());
+    }
+
     /** Increment the narrator-skipped counter. {@code reason} is one of the labels in {@link NarratorSkipReason}. */
     public void narratorSkipped(String tenantId, NarratorSkipReason reason) {
         Objects.requireNonNull(tenantId, "tenantId");
@@ -190,6 +271,120 @@ public class AiAgentMetrics {
         LOG.debug("ai-agent metrics: reviewer.run.complete tenantId={} outcome={}", tenantId, outcome.label());
     }
 
+    /**
+     * Increment the assistant-fired counter — one increment per successful
+     * chat round-trip (Anthropic Success + non-empty response text).
+     */
+    public void assistantFired(String tenantId) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Counter.builder(METER_ASSISTANT_FIRED)
+                .description("Conversational Assistant calls that produced a substantive response.")
+                .tags(Tags.of("tenant_id", tenantId))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Increment the assistant-failed counter, tagged with the failure reason.
+     * Counters are tag-stable across invocations so Prometheus/App Insights
+     * can split the rate by reason.
+     */
+    public void assistantFailed(String tenantId, AssistantFailureReason reason) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(reason, "reason");
+        Counter.builder(METER_ASSISTANT_FAILED)
+                .description("Conversational Assistant calls that returned a synthetic error turn.")
+                .tags(Tags.of("tenant_id", tenantId, "reason", reason.label()))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Record token volume for one successful chat round-trip. {@code kind} is
+     * one of {@code "input"} or {@code "output"}. Increments by {@code count}
+     * so a single call captures both legs in one place.
+     */
+    public void assistantTokens(String tenantId, String kind, int count) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(kind, "kind");
+        if (count <= 0) {
+            return;
+        }
+        Counter.builder(METER_ASSISTANT_TOKENS)
+                .description("Conversational Assistant token volume (input|output).")
+                .tags(Tags.of("tenant_id", tenantId, "kind", kind))
+                .register(registry)
+                .increment(count);
+    }
+
+    /**
+     * Increment {@link #METER_SENTINEL_ALLOW} tagged by the
+     * {@code (tenant_id, level_swept, decision_path)} triple from ADR-0007 §3.
+     * {@code decisionPath} is the lower-snake-case label for the
+     * {@link com.levelsweep.aiagent.sentinel.SentinelDecisionResponse.DecisionPath}
+     * variant: {@code explicit_allow}, {@code low_confidence_veto_overridden},
+     * or {@code fallback_allow}.
+     */
+    public void sentinelAllow(String tenantId, String levelSwept, String decisionPath) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(levelSwept, "levelSwept");
+        Objects.requireNonNull(decisionPath, "decisionPath");
+        Counter.builder(METER_SENTINEL_ALLOW)
+                .description("Sentinel ALLOW outcomes per (tenant, level_swept, decision_path).")
+                .tags(Tags.of("tenant_id", tenantId, "level_swept", levelSwept, "decision_path", decisionPath))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Increment {@link #METER_SENTINEL_VETO_APPLIED} tagged by
+     * {@code (tenant_id, level_swept)} per ADR-0007 §3. Only fires when the
+     * model emitted VETO with {@code confidence >= 0.85} — lower-confidence
+     * vetoes are demoted to {@link #sentinelAllow} with
+     * {@code decision_path=low_confidence_veto_overridden}.
+     */
+    public void sentinelVetoApplied(String tenantId, String levelSwept) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(levelSwept, "levelSwept");
+        Counter.builder(METER_SENTINEL_VETO_APPLIED)
+                .description("Sentinel VETO outcomes (confidence ≥ 0.85) per (tenant, level_swept).")
+                .tags(Tags.of("tenant_id", tenantId, "level_swept", levelSwept))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Increment {@link #METER_SENTINEL_FALLBACK} tagged by
+     * {@code (tenant_id, reason)} per ADR-0007 §3 fail-OPEN table. Reason is
+     * the lower-snake-case label of
+     * {@link com.levelsweep.aiagent.sentinel.SentinelDecisionResponse.FallbackReason}.
+     */
+    public void sentinelFallback(String tenantId, String reason) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(reason, "reason");
+        Counter.builder(METER_SENTINEL_FALLBACK)
+                .description("Sentinel fail-OPEN fallback per (tenant, reason).")
+                .tags(Tags.of("tenant_id", tenantId, "reason", reason))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Increment {@link #METER_SENTINEL_SKIPPED} tagged by
+     * {@code (tenant_id, reason)} when the Sentinel was bypassed entirely
+     * (no Anthropic call, no audit row). Reason is currently always
+     * {@code flag_off} per ADR-0007 §7.
+     */
+    public void sentinelSkipped(String tenantId, String reason) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(reason, "reason");
+        Counter.builder(METER_SENTINEL_SKIPPED)
+                .description("Sentinel evaluations skipped without an Anthropic call (e.g. feature flag off).")
+                .tags(Tags.of("tenant_id", tenantId, "reason", reason))
+                .register(registry)
+                .increment();
+    }
+
     /** Stable label values for the {@code reason} dimension on {@link #METER_NARRATOR_SKIPPED}. */
     public enum NarratorSkipReason {
         COST_CAP("cost_cap"),
@@ -199,6 +394,24 @@ public class AiAgentMetrics {
         private final String label;
 
         NarratorSkipReason(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
+
+    /** Stable label values for the {@code reason} dimension on {@link #METER_ASSISTANT_FAILED}. */
+    public enum AssistantFailureReason {
+        ANTHROPIC_FAILURE("anthropic_failure"),
+        COST_CAP("cost_cap"),
+        PARSE("parse"),
+        TIMEOUT("timeout");
+
+        private final String label;
+
+        AssistantFailureReason(String label) {
             this.label = label;
         }
 
