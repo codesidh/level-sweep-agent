@@ -47,6 +47,8 @@ public record TradeSkipped(
     public static final String STAGE_SIGNAL_SKIP = "SIGNAL_SKIP";
     public static final String STAGE_RISK_BLOCKED = "RISK_BLOCKED";
     public static final String STAGE_NO_STRIKE = "NO_STRIKE";
+    /** ADR-0007 §2 — Sentinel returned VETO with confidence ≥ 0.85. Saga compensates. */
+    public static final String STAGE_SENTINEL_VETO = "SENTINEL_VETO";
 
     public TradeSkipped {
         Objects.requireNonNull(tenantId, "tenantId");

@@ -1,5 +1,7 @@
 package com.levelsweep.aiagent.sentinel;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -26,7 +28,21 @@ import java.util.Objects;
  *
  * <p>The exhaustive {@code switch} on the variant in the saga forces the
  * caller to handle every documented outcome — no hidden default.
+ *
+ * <p><b>JSON wire shape</b>: the {@code type} discriminator is added by
+ * Jackson at the top of the object, e.g. {@code {"type":"Allow", ...}}.
+ * The Phase 5 S5 SentinelResource (REST) and remote SentinelClient
+ * (decision-engine) round-trip via this discriminator. Sealed-interface
+ * deserialization without an explicit discriminator would fail because
+ * Jackson cannot inspect record components to infer the variant — see
+ * https://github.com/FasterXML/jackson-databind/issues/3508.
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = SentinelDecisionResponse.Allow.class, name = "Allow"),
+    @JsonSubTypes.Type(value = SentinelDecisionResponse.Veto.class, name = "Veto"),
+    @JsonSubTypes.Type(value = SentinelDecisionResponse.Fallback.class, name = "Fallback")
+})
 public sealed interface SentinelDecisionResponse
         permits SentinelDecisionResponse.Allow, SentinelDecisionResponse.Veto, SentinelDecisionResponse.Fallback {
 
