@@ -57,11 +57,16 @@ resources:
 # Plain-text application config. Anything secret comes from keyVault.objects.
 env:
   TENANT_ID: "OWNER"
-  # Kafka is not deployed in Phase 6 (Strimzi is on staging branch).
-  # The journal-service consumer container will idle at boot until the
-  # Strimzi cluster is on this namespace; once it lands, no chart change is
-  # needed — the listener finds the broker by service name and starts.
-  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  # Kafka is not deployed in Phase 6 (Strimzi is on staging branch). Custom
+  # ConcurrentKafkaListenerContainerFactory beans in KafkaConfig.java don't
+  # honor `spring.kafka.listener.auto-startup=false` (only the default factory
+  # does), so the container starts on context refresh and validates
+  # bootstrap.servers via DNS. `kafka:9092` does not resolve in dev → the
+  # consumer constructor throws ConfigException → pod CrashLoopBackOff.
+  # `localhost:9092` resolves to 127.0.0.1, validation passes, the consumer
+  # is constructed, and connect-attempts loop harmlessly under spring-kafka's
+  # NetworkClient backoff. Once Strimzi lands, set this back to `kafka:9092`.
+  KAFKA_BOOTSTRAP_SERVERS: "localhost:9092"
   # Mongo URL — managed Mongo lands in Phase 7 per architecture-spec §13.2.
   # Until then, in-cluster Mongo (deployed as a separate Helm release) is
   # the dev target. The connection-string format follows the Spring Boot
