@@ -560,10 +560,12 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "ai_cost_cap_warn" {
 }
 
 # Alert 11: Anthropic API Connection FSM UNHEALTHY.
-# Phase 4 ships with this DISABLED — the ai-agent-service does not yet have a
-# Connection FSM for Anthropic. Phase 5 (Sentinel) wires the Connection FSM
-# as a precondition for Sentinel veto path; flip enabled = true and escalate
-# severity to 1 then (Sentinel falls back to ALLOW on outage).
+# Phase 5 S1 (PR #116) wires the Connection FSM in ai-agent-service. Flag is
+# now enabled. Sentinel falls back to ALLOW on outage per ADR-0007 §3 (cb_open
+# fallback path), so this alert is informational/operational rather than a
+# trade-halt signal — the deterministic Risk FSM HALT remains the fail-closed
+# entry path. Severity stays at 2 because the AI veto layer is degraded but
+# the trading saga continues.
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "anthropic_cb_unhealthy" {
   name                = "alert-${var.project}-${var.environment}-anthropic-cb-unhealthy"
   resource_group_name = azurerm_resource_group.obs.name
@@ -573,10 +575,10 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "anthropic_cb_unhealth
   window_duration      = "PT5M"
   scopes               = [azurerm_application_insights.main.id]
   severity             = 2
-  enabled              = false
+  enabled              = true
 
-  description             = "AI Agent Service's Connection FSM for Anthropic API is UNHEALTHY (state >= 2). Narrator/Reviewer skip on outage; Phase 5 escalates to P1 because Sentinel falls back to ALLOW. DISABLED until Connection FSM is wired in Phase 5."
-  display_name            = "P2 — Anthropic API CB UNHEALTHY (DISABLED until Phase 5)"
+  description             = "AI Agent Service's Connection FSM for Anthropic API is UNHEALTHY (state >= 2) for 3+ consecutive 1-minute samples. Sentinel/Narrator/Reviewer fall back to ALLOW (Sentinel) / skip (Narrator/Reviewer) per ADR-0007 §3. Existing positions continue under deterministic exit rules; the deterministic Risk FSM HALT remains the fail-closed entry path."
+  display_name            = "P2 — Anthropic API CB UNHEALTHY"
   auto_mitigation_enabled = true
 
   criteria {
@@ -972,6 +974,178 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "eod_flatten_heartbeat
       | summarize last_seen = max(timestamp) by tenant_id = "OWNER"
       | extend hours_since = datetime_diff('hour', now(), last_seen)
       | where hours_since >= 26
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# =============================================================================
+# Phase 5 alerts (alerts 19-21) — Sentinel + Conversational Assistant.
+#
+# Counter taxonomy emitted by services/ai-agent-service per ADR-0007 §3:
+#   ai.sentinel.allow{tenant_id, level_swept, decision_path}
+#   ai.sentinel.veto_applied{tenant_id, level_swept}
+#   ai.sentinel.fallback{tenant_id, reason}
+#   ai.sentinel.skipped{tenant_id, reason="flag_off"}
+#   ai.assistant.fired{tenant_id}
+#   ai.assistant.failed{tenant_id, reason}
+#
+# All three reuse the Phase 1 action group; Phase 7 splits high-severity
+# escalation onto a Twilio-backed group.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 19. Sentinel veto rate elevated (P3, informational)
+# -----------------------------------------------------------------------------
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "sentinel_veto_rate" {
+  name                = "alert-${var.project}-${var.environment}-sentinel-veto-rate"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT15M"
+  window_duration      = "PT1H"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 3
+  enabled              = true
+
+  description             = "Sentinel veto ratio > 30% of trade attempts in the last hour (with at least 10 total attempts). Investigate: strategy parameter drift? unusual market regime? Capture replay fixtures of the vetoed signals for regression analysis (see services/ai-agent-service/src/test/resources/sentinel/replay/README.md)."
+  display_name            = "P3 — Sentinel veto rate > 30% (1h)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      let veto = customMetrics
+        | where name == "ai_sentinel_veto_applied" and cloud_RoleName == "ai-agent-service"
+        | summarize veto_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      let allow = customMetrics
+        | where name == "ai_sentinel_allow" and cloud_RoleName == "ai-agent-service"
+        | summarize allow_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      veto
+      | join kind=fullouter (allow) on tenant_id
+      | extend veto_count = coalesce(veto_count, 0L), allow_count = coalesce(allow_count, 0L)
+      | extend total = veto_count + allow_count
+      | where total >= 10
+      | extend veto_ratio = todouble(veto_count) / todouble(total)
+      | where veto_ratio > 0.3
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 20. Sentinel fallback rate elevated (P2)
+# -----------------------------------------------------------------------------
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "sentinel_fallback_rate" {
+  name                = "alert-${var.project}-${var.environment}-sentinel-fallback-rate"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT15M"
+  window_duration      = "PT1H"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 2
+  enabled              = true
+
+  description             = "Sentinel fallback ratio > 20% over the past hour (cb_open / timeout / cost_cap / parse / transport / rate_limit). Each fallback degrades to ALLOW per ADR-0007 §3 — the AI veto layer is not running. Investigate: Anthropic outage (alert #11)? Cost cap breach (alert #10)? Sustained rate limiting? Sentinel system prompt regression (parse failures)?"
+  display_name            = "P2 — Sentinel fallback rate > 20% (1h)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      let fallback = customMetrics
+        | where name == "ai_sentinel_fallback" and cloud_RoleName == "ai-agent-service"
+        | summarize fallback_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      let allow = customMetrics
+        | where name == "ai_sentinel_allow" and cloud_RoleName == "ai-agent-service"
+        | summarize allow_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      let veto = customMetrics
+        | where name == "ai_sentinel_veto_applied" and cloud_RoleName == "ai-agent-service"
+        | summarize veto_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      fallback
+      | join kind=fullouter (allow) on tenant_id
+      | join kind=fullouter (veto) on tenant_id
+      | extend fallback_count = coalesce(fallback_count, 0L), allow_count = coalesce(allow_count, 0L), veto_count = coalesce(veto_count, 0L)
+      | extend total = fallback_count + allow_count + veto_count
+      | where total >= 10
+      | extend fallback_ratio = todouble(fallback_count) / todouble(total)
+      | where fallback_ratio > 0.2
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 21. Conversational Assistant failure rate elevated (P3)
+# -----------------------------------------------------------------------------
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "assistant_failure_rate" {
+  name                = "alert-${var.project}-${var.environment}-assistant-failure-rate"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT15M"
+  window_duration      = "PT1H"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 3
+  enabled              = true
+
+  description             = "Conversational Assistant failure ratio > 50% over the past hour (with at least 4 total events). Investigate: cost cap breach (alert #10)? Anthropic 429/529? Mongo connectivity? Operator UX is degraded but trading is unaffected (Assistant is not on the saga hot path)."
+  display_name            = "P3 — Assistant failure rate > 50% (1h)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      let failed = customMetrics
+        | where name == "ai_assistant_failed" and cloud_RoleName == "ai-agent-service"
+        | summarize failed_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      let fired = customMetrics
+        | where name == "ai_assistant_fired" and cloud_RoleName == "ai-agent-service"
+        | summarize fired_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      failed
+      | join kind=fullouter (fired) on tenant_id
+      | extend failed_count = coalesce(failed_count, 0L), fired_count = coalesce(fired_count, 0L)
+      | extend total = failed_count + fired_count
+      | where total >= 4
+      | extend fail_ratio = todouble(failed_count) / todouble(total)
+      | where fail_ratio > 0.5
     KQL
     time_aggregation_method = "Count"
     threshold               = 1
