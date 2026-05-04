@@ -114,6 +114,9 @@ quarkus-micrometer-prometheus     = { module = "io.quarkus:quarkus-micrometer-re
 quarkus-opentelemetry             = { module = "io.quarkus:quarkus-opentelemetry" }
 quarkus-config-yaml               = { module = "io.quarkus:quarkus-config-yaml" }
 quarkus-junit5                    = { module = "io.quarkus:quarkus-junit5" }
+# @InjectMock + @QuarkusTest mockito harness — required for the Phase 5 S6
+# AssistantResource Quarkus REST tests. BOM-managed version.
+quarkus-junit5-mockito            = { module = "io.quarkus:quarkus-junit5-mockito" }
 # Quarkus does not publish an `io.quarkus:quarkus-rest-assured` artifact;
 # the integration is via plain rest-assured plus `quarkus-junit5`. Keep the
 # catalog alias name for build-file convenience but point it at the actual jar.

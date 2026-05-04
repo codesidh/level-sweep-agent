@@ -66,6 +66,12 @@ public class RestClientConfig {
         return build(baseUrl);
     }
 
+    @Bean(name = "aiAgentRestClient")
+    public RestClient aiAgentRestClient(@Value("${levelsweep.downstream.ai-agent-url}") String baseUrl) {
+        LOG.info("aiAgentRestClient → {}", baseUrl);
+        return build(baseUrl);
+    }
+
     private RestClient build(String baseUrl) {
         // Spring Boot 3.3.x exposes ClientHttpRequestFactorySettings.DEFAULTS
         // (a record constant) rather than a defaults() method. The Jdk-backed

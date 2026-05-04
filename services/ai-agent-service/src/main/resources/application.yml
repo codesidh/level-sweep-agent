@@ -100,6 +100,24 @@ reviewer:
   daily-reports-collection: "daily_reports"
   signal-history-collection: "signal_history"
 
+# Phase 5 S6 Conversational Assistant (architecture-spec §4.5 + ADR-0006).
+# Mongo collection holds per-(tenant, conversation) threads. Indexed by
+# (tenant_id, conversation_id) unique for primary lookup and (tenant_id,
+# updated_at desc) for the "recent conversations" listing.
+#
+# context.max-turns:        truncate older turns past N for the API context
+#                            window. The Assistant's typical operator question
+#                            references the last few turns; older history
+#                            lands in the "[earlier turns truncated]" preamble.
+# system-prompt-version:    audit-traceable version tag. Bump when the
+#                            system prompt copy changes so prompt-hash
+#                            equivalence is auditable per-version.
+assistant:
+  conversations-collection: "assistant_conversations"
+  context:
+    max-turns: 20
+  system-prompt-version: v1
+
 levelsweep:
   tenant:
     bootstrap-id: OWNER
