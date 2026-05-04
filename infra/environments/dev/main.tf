@@ -324,6 +324,23 @@ resource "azurerm_federated_identity_credential" "projection_service_sa" {
   subject             = "system:serviceaccount:projection-service:projection-service"
 }
 
+# Phase 6: api-gateway-bff (edge Spring Boot 3.x BFF) binds to the same
+# kubelet MI via its own federated credential. Subject must match the
+# deploy-dev.yml `--namespace` + ServiceAccount name produced by the Helm
+# chart (`system:serviceaccount:api-gateway-bff:api-gateway-bff`).
+# The service runs at 100m CPU / 256 MiB requests — matches user-config-
+# service's footprint (no DB pool, just RestClient fan-out + bucket4j).
+# Single-replica per architecture-spec §16 because the Phase A rate
+# limiter is in-process; Phase 7 moves the limiter off-pod and HPAs.
+resource "azurerm_federated_identity_credential" "api_gateway_bff_sa" {
+  name                = "fc-${var.project}-${local.environment}-api-gateway-bff"
+  resource_group_name = module.aks.cluster_resource_group
+  parent_id           = module.aks.kubelet_user_assigned_identity_id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = module.aks.oidc_issuer_url
+  subject             = "system:serviceaccount:api-gateway-bff:api-gateway-bff"
+}
+
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
   scope                = module.keyvault.kv_id
   role_definition_name = "Key Vault Secrets User"

@@ -1194,3 +1194,146 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: 0   # Phase 6: report only. Phase 7 flips to 1.
           ignore-unfixed: true
+
+  # ---------------------------------------------------------------------------
+  # Container build + Trivy scan + push (Phase 6: api-gateway-bff).
+  # Mirrors the user-config-service container job — same OIDC + ACR + GHCR +
+  # Buildx flow, gated per-service by dorny/paths-filter so changes that
+  # don't touch api-gateway-bff don't rebuild this image. Native-image is
+  # NOT on the Phase 7 plan for edge Spring Boot — the fat-jar Dockerfile
+  # is the steady state.
+  #
+  # Build difference vs. the Quarkus services: this job invokes :bootJar
+  # (Spring Boot Gradle plugin) instead of :quarkusBuild. The output lands
+  # at build/libs/api-gateway-bff-*.jar, which Dockerfile.jvm COPYs in
+  # directly — no fast-jar layout, no quarkus-run.jar wrapper.
+  # ---------------------------------------------------------------------------
+  containers-api-gateway-bff:
+    name: containers (api-gateway-bff)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write    # OIDC for `azure/login` so we can push to ACR.
+    steps:
+      - uses: actions/checkout@v4
+
+      # Per-service paths filter — skip the rest of the job when the push
+      # didn't touch api-gateway-bff / shared / gradle. Mirrors the
+      # dorny/paths-filter pattern used for the other container jobs.
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api_gateway:
+              - 'services/api-gateway-bff/**'
+              - 'shared/**'
+              - 'gradle/**'
+              - 'gradlew'
+              - 'gradlew.bat'
+              - '**/*.gradle.kts'
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - '.github/workflows/main.yml'
+              - 'deploy/helm/api-gateway-bff/**'
+
+      - name: Set up JDK 21
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Pin to 8.10.2 to match the wrapper. Quarkus 3.15.1 plugin is not
+          # yet compatible with Gradle 9.x — the build is monorepo so even
+          # cold-path Spring Boot services share the wrapper version.
+          gradle-version: 8.10.2
+
+      - name: Bootstrap Gradle wrapper jar
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin
+
+      # bootJar produces the Spring Boot fat jar under build/libs/ without
+      # re-running the test suite (already covered by the `build` job).
+      - name: Assemble api-gateway-bff fat-jar
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        run: ./gradlew :services:api-gateway-bff:bootJar --no-daemon
+
+      - name: Log in to GHCR
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Azure OIDC + ACR login. Gated on main-branch (push or workflow_dispatch)
+      # so PRs from forks — which don't have OIDC secret access — don't fail.
+      - name: Azure login (OIDC)
+        if: (steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_LOGIN_SERVER != ''
+        uses: azure/login@v2
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        if: (steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_NAME != ''
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+        run: az acr login --name "${ACR_NAME}"
+
+      - name: Set up Buildx
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image tags
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        id: tags
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          GHCR_BASE="ghcr.io/${OWNER}/${REPO}/api-gateway-bff"
+          echo "ghcr_base=${GHCR_BASE}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_sha=${GHCR_BASE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_latest=${GHCR_BASE}:latest" >> "$GITHUB_OUTPUT"
+          {
+            echo "all_tags<<EOF"
+            echo "${GHCR_BASE}:${GITHUB_SHA}"
+            echo "${GHCR_BASE}:latest"
+            if [ -n "${ACR_LOGIN_SERVER}" ]; then
+              echo "${ACR_LOGIN_SERVER}/api-gateway-bff:${GITHUB_SHA}"
+              echo "${ACR_LOGIN_SERVER}/api-gateway-bff:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build + push image
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/api-gateway-bff
+          file: services/api-gateway-bff/src/main/docker/Dockerfile.jvm
+          push: true
+          tags: ${{ steps.tags.outputs.all_tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy scan image
+        if: steps.filter.outputs.api_gateway == 'true' || github.event_name == 'workflow_dispatch'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.tags.outputs.ghcr_sha }}
+          severity: HIGH,CRITICAL
+          exit-code: 0   # Phase 6: report only. Phase 7 flips to 1.
+          ignore-unfixed: true
