@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.levelsweep.aiagent.anthropic.AnthropicRequest.Role;
+import com.levelsweep.aiagent.observability.AiAgentMetrics;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -222,6 +223,7 @@ class DailyCostTrackerTest {
         return new DailyCostTracker(
                 repository,
                 clock,
+                AiAgentMetrics.noop(),
                 new BigDecimal("1.00"),
                 new BigDecimal("1.00"),
                 new BigDecimal("5.00"),

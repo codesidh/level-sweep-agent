@@ -9,6 +9,7 @@ import com.levelsweep.aiagent.anthropic.CostCalculator;
 import com.levelsweep.aiagent.audit.AiCallAuditWriter;
 import com.levelsweep.aiagent.audit.PromptHasher;
 import com.levelsweep.aiagent.cost.DailyCostTracker;
+import com.levelsweep.aiagent.observability.AiAgentMetrics;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
@@ -80,6 +81,7 @@ public class TradeNarrator {
     private final AnthropicClient anthropicClient;
     private final DailyCostTracker costTracker;
     private final AiCallAuditWriter auditWriter;
+    private final AiAgentMetrics metrics;
     private final Clock clock;
     private final String model;
 
@@ -88,11 +90,13 @@ public class TradeNarrator {
             AnthropicClient anthropicClient,
             DailyCostTracker costTracker,
             AiCallAuditWriter auditWriter,
+            AiAgentMetrics metrics,
             Clock clock,
             @ConfigProperty(name = "anthropic.models.narrator", defaultValue = "claude-sonnet-4-6") String model) {
         this.anthropicClient = Objects.requireNonNull(anthropicClient, "anthropicClient");
         this.costTracker = Objects.requireNonNull(costTracker, "costTracker");
         this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.model = Objects.requireNonNull(model, "model");
     }
@@ -135,6 +139,7 @@ public class TradeNarrator {
                     cap,
                     current,
                     projectedCost);
+            safeNarratorSkipped(request.tenantId(), AiAgentMetrics.NarratorSkipReason.COST_CAP);
             return Optional.empty();
         }
 
@@ -178,6 +183,7 @@ public class TradeNarrator {
                     request.tradeId(),
                     request.eventType(),
                     response.getClass().getSimpleName());
+            safeNarratorSkipped(request.tenantId(), AiAgentMetrics.NarratorSkipReason.ANTHROPIC_FAILURE);
             return Optional.empty();
         }
 
@@ -193,11 +199,31 @@ public class TradeNarrator {
                     request.tenantId(),
                     request.tradeId(),
                     request.eventType());
+            safeNarratorSkipped(request.tenantId(), AiAgentMetrics.NarratorSkipReason.EMPTY_RESPONSE);
             return Optional.empty();
         }
 
+        safeNarratorFired(request.tenantId());
         return Optional.of(new TradeNarrative(
                 request.tenantId(), request.tradeId(), narrative, Instant.now(clock), model, promptHash));
+    }
+
+    /** Best-effort metric emit — a meter failure must never block narration. */
+    private void safeNarratorSkipped(String tenantId, AiAgentMetrics.NarratorSkipReason reason) {
+        try {
+            metrics.narratorSkipped(tenantId, reason);
+        } catch (RuntimeException e) {
+            LOG.warn("narrator metrics emit failed (skipped/{}): {}", reason, e.toString());
+        }
+    }
+
+    /** Best-effort metric emit — a meter failure must never block narration. */
+    private void safeNarratorFired(String tenantId) {
+        try {
+            metrics.narratorFired(tenantId);
+        } catch (RuntimeException e) {
+            LOG.warn("narrator metrics emit failed (fired): {}", e.toString());
+        }
     }
 
     /**

@@ -500,3 +500,207 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "trail_nbbo_stale" {
 
   tags = var.tags
 }
+
+# =============================================================================
+# Phase 4 alerts (alerts 10-13) — AI Agent Service.
+#
+# Meter names emitted by services/ai-agent-service/.../observability/AiAgentMetrics.java:
+#   ai.cost.daily_total_usd          (gauge, tagged tenant_id + role)
+#   ai.narrator.skipped              (counter, tagged tenant_id + reason)
+#   ai.narrator.fired                (counter, tagged tenant_id)
+#   ai.reviewer.run.complete         (counter, tagged tenant_id + outcome)
+#
+# App Insights converts dots-to-underscores in customMetrics name field.
+# All four alerts share the Phase 1 action group; Phase 7 splits onto Twilio
+# for higher-severity escalation.
+# =============================================================================
+
+# Alert 10: AI daily cost cap approached or exceeded.
+# Per-role caps (architecture-spec §4.8): $1/day each for narrator + reviewer
+# in Phase 4. 0.9 USD == 90% threshold. Severity 2 — role degrades gracefully
+# (skip + log) per architecture-spec §4.9.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "ai_cost_cap_warn" {
+  name                = "alert-${var.project}-${var.environment}-ai-cost-cap-warn"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT1H"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 2
+  enabled              = true
+
+  description             = "AI Agent Service spent >= $0.90 (90% of the $1.00 per-(tenant, role) daily cap) in a 1-hour window. Cost cap fully breached at $1.00 — role will degrade to no-op until 00:00 ET. Investigate: runaway loop? misconfigured prompt that's exploding?"
+  display_name            = "P2 — AI cost cap approached (>= 90% of role cap)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      customMetrics
+      | where name == "ai_cost_daily_total_usd"
+      | where cloud_RoleName == "ai-agent-service"
+      | summarize peak_cost_usd = max(value) by tostring(customDimensions.tenant_id), tostring(customDimensions.role)
+      | where peak_cost_usd >= 0.9
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# Alert 11: Anthropic API Connection FSM UNHEALTHY.
+# Phase 4 ships with this DISABLED — the ai-agent-service does not yet have a
+# Connection FSM for Anthropic. Phase 5 (Sentinel) wires the Connection FSM
+# as a precondition for Sentinel veto path; flip enabled = true and escalate
+# severity to 1 then (Sentinel falls back to ALLOW on outage).
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "anthropic_cb_unhealthy" {
+  name                = "alert-${var.project}-${var.environment}-anthropic-cb-unhealthy"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT1M"
+  window_duration      = "PT5M"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 2
+  enabled              = false
+
+  description             = "AI Agent Service's Connection FSM for Anthropic API is UNHEALTHY (state >= 2). Narrator/Reviewer skip on outage; Phase 5 escalates to P1 because Sentinel falls back to ALLOW. DISABLED until Connection FSM is wired in Phase 5."
+  display_name            = "P2 — Anthropic API CB UNHEALTHY (DISABLED until Phase 5)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      customMetrics
+      | where name == "connection_state"
+      | where customDimensions.dependency == "anthropic"
+      | where cloud_RoleName == "ai-agent-service"
+      | where value >= 2
+      | summarize unhealthy_samples = count() by bin(timestamp, 1m)
+      | where unhealthy_samples >= 3
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# Alert 12: Trade Narrator skip rate elevated.
+# Skip ratio = skipped / (skipped + fired) over a 1-hour window with at least
+# 4 total events. > 50% means something is consistently going wrong:
+# persistent cost cap, repeated 429/529 from Anthropic, mongo down, or a
+# prompt regression. Severity 3 because narratives are non-critical.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "narrator_skip_rate_elevated" {
+  name                = "alert-${var.project}-${var.environment}-narrator-skip-rate"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT15M"
+  window_duration      = "PT1H"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 3
+  enabled              = true
+
+  description             = "Narrator skip ratio > 50% over the past hour (with at least 4 total narrator events). Investigate: cost cap breach? Anthropic 429/529? Mongo connectivity? Prompt regression?"
+  display_name            = "P3 — Narrator skip rate > 50% (1h)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      let skipped = customMetrics
+        | where name == "ai_narrator_skipped" and cloud_RoleName == "ai-agent-service"
+        | summarize skipped_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      let fired = customMetrics
+        | where name == "ai_narrator_fired" and cloud_RoleName == "ai-agent-service"
+        | summarize fired_count = sum(valueCount) by tenant_id = tostring(customDimensions.tenant_id);
+      skipped
+      | join kind=fullouter (fired) on tenant_id
+      | extend skipped_count = coalesce(skipped_count, 0L), fired_count = coalesce(fired_count, 0L)
+      | extend total = skipped_count + fired_count
+      | where total >= 4
+      | extend skip_ratio = todouble(skipped_count) / todouble(total)
+      | where skip_ratio > 0.5
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# Alert 13: Daily Reviewer didn't run.
+# DailyReviewerScheduler fires at 16:30 ET via Quarkus @Scheduled. The cron
+# emits one increment per fire on `ai.reviewer.run.complete` regardless of
+# whether the review succeeded or was skipped. If no recent rows are seen,
+# the cron didn't fire — JVM crashed, scheduler disabled, pod missing.
+# Severity 2 because the daily report is missing and operator must reconcile.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "reviewer_run_missing" {
+  name                = "alert-${var.project}-${var.environment}-reviewer-run-missing"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT30M"
+  window_duration      = "P2D"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 2
+  enabled              = true
+
+  description             = "Daily Reviewer scheduler did not emit ai.reviewer.run.complete in the last 26 hours. Cron didn't fire (JVM crash? scheduler disabled? pod missing?). Operator: read ai-agent-service logs for the period and decide whether to re-trigger manually or accept the gap."
+  display_name            = "P2 — Daily Reviewer run missing (>26h)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      customMetrics
+      | where name == "ai_reviewer_run_complete" and cloud_RoleName == "ai-agent-service"
+      | summarize last_seen = max(timestamp) by tenant_id = tostring(customDimensions.tenant_id)
+      | extend hours_since = datetime_diff('hour', now(), last_seen)
+      | where hours_since >= 26
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
