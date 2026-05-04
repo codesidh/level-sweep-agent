@@ -486,12 +486,33 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-calendar-service:
     name: deploy calendar-service to dev
+  # Phase 6 — user-config-service deploy. Mirrors the journal-service job
+  # above. Lives in its own namespace `user-config-service` so a failed
+  # deploy of one service does not block the others. The federated-identity
+  # binding for the SA
+  #   system:serviceaccount:user-config-service:user-config-service
+  # is created by `infra/environments/dev/main.tf` →
+  # azurerm_federated_identity_credential.user_config_service_sa, which must
+  # be applied by iac.yml before this job runs successfully against a fresh
+  # cluster.
+  #
+  # KV objects mounted: applicationinsights-connection-string (already
+  # mirrored from Phase 1 bootstrap; optional) and mssql-password (Phase 6
+  # dev points at the in-cluster MS SQL deployment with the seeded SA
+  # password — Phase 7 swaps in Azure SQL with AAD auth and removes the
+  # password-secret entirely).
+  # ---------------------------------------------------------------------------
+  deploy-user-config-service:
+    name: deploy user-config-service to dev
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
 
     steps:
+      # On workflow_run, checkout defaults to the default branch tip — pin to
+      # the head_sha that main.yml just built so the chart and the image are
+      # in lockstep.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
@@ -539,6 +560,16 @@ jobs:
             --set image.tag="${{ steps.sha.outputs.value }}" \
             --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
             --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+          helm upgrade --install user-config-service deploy/helm/user-config-service \
+            --namespace user-config-service \
+            --create-namespace \
+            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/user-config-service" \
+            --set image.tag="${{ steps.sha.outputs.value }}" \
+            --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
+            --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+            --set keyVault.name="${{ secrets.KEY_VAULT_NAME }}" \
+            --set keyVault.vaultUri="${{ secrets.KEY_VAULT_URI }}" \
+            --set appInsights.connectionStringSecretName=applicationinsights-connection-string \
             --wait \
             --timeout 5m
 
@@ -548,6 +579,10 @@ jobs:
           kubectl -n calendar-service get pods,svc
 
       - name: Dump pod state on failure (calendar-service)
+          kubectl -n user-config-service rollout status deployment/user-config-service --timeout=5m
+          kubectl -n user-config-service get pods,svc
+
+      - name: Dump pod state on failure (user-config-service)
         if: failure()
         run: |
           echo "::group::nodes"
@@ -564,4 +599,14 @@ jobs:
           echo "::endgroup::"
           echo "::group::logs"
           kubectl -n calendar-service logs -l app.kubernetes.io/name=calendar-service --tail=200 --all-containers || true
+          kubectl -n user-config-service get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n user-config-service describe pods -l app.kubernetes.io/name=user-config-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n user-config-service get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n user-config-service logs -l app.kubernetes.io/name=user-config-service --tail=200 --all-containers || true
           echo "::endgroup::"

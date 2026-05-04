@@ -1,0 +1,6 @@
+apiVersion: v2
+name: user-config-service
+description: Phase 6 User & Config Service — cold-path Spring Boot 3.x tenant configuration store. Serves CRUD over MS SQL tenant_config (Flyway-managed) at /config/{tenantId}; OWNER row bootstrap-seeded on startup; Phase B feature-flag set per CLAUDE.md guardrail #1.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

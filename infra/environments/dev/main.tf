@@ -258,11 +258,25 @@ resource "azurerm_federated_identity_credential" "journal_service_sa" {
 # needs to read a KV secret.
 resource "azurerm_federated_identity_credential" "calendar_service_sa" {
   name                = "fc-${var.project}-${local.environment}-calendar-service"
+# Phase 6: user-config-service (cold-path Spring Boot 3.x) binds to the same
+# kubelet MI via its own federated credential. Subject must match the
+# deploy-dev.yml `--namespace` + ServiceAccount name produced by the Helm
+# chart (`system:serviceaccount:user-config-service:user-config-service`).
+# The service runs at 100m CPU / 256 MiB requests — half the journal-service
+# footprint because there's no Kafka listener container, no Mongo client,
+# just a pooled JDBC connection — so the existing 2 × Standard_D2s_v4
+# cluster has the headroom (~3.75 GiB used across all five Phase 6 service
+# pods of 16 GiB available). Phase 7 splits this off into a dedicated
+# per-service workload MI alongside the others AND revisits the node-pool
+# size once decision-engine + remaining cold-path Spring services land.
+resource "azurerm_federated_identity_credential" "user_config_service_sa" {
+  name                = "fc-${var.project}-${local.environment}-user-config-service"
   resource_group_name = module.aks.cluster_resource_group
   parent_id           = module.aks.kubelet_user_assigned_identity_id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = module.aks.oidc_issuer_url
   subject             = "system:serviceaccount:calendar-service:calendar-service"
+  subject             = "system:serviceaccount:user-config-service:user-config-service"
 }
 
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
