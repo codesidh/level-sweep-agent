@@ -91,6 +91,30 @@ public class AiAgentMetrics {
     public static final String METER_REVIEWER_RUN_COMPLETE = "ai.reviewer.run.complete";
 
     /**
+     * Pre-Trade Sentinel meters (ADR-0007 §3 + §6). The four labels collectively
+     * cover the published taxonomy:
+     *
+     * <ul>
+     *   <li>{@code ai.sentinel.allow{tenant_id, level_swept, decision_path}} —
+     *       counter on every Allow outcome; {@code decision_path} discriminates
+     *       explicit ALLOW vs low-confidence VETO override vs fail-OPEN.</li>
+     *   <li>{@code ai.sentinel.veto_applied{tenant_id, level_swept}} — counter
+     *       on every Veto (confidence ≥ 0.85). The saga compensation alert
+     *       fires off this meter.</li>
+     *   <li>{@code ai.sentinel.fallback{tenant_id, reason}} — counter on every
+     *       Fallback. Reason ∈ transport / rate_limit / cost_cap / parse /
+     *       timeout / cb_open.</li>
+     *   <li>{@code ai.sentinel.skipped{tenant_id, reason}} — counter when the
+     *       feature flag is OFF; reason is currently always {@code flag_off}.</li>
+     * </ul>
+     */
+    public static final String METER_SENTINEL_ALLOW = "ai.sentinel.allow";
+
+    public static final String METER_SENTINEL_VETO_APPLIED = "ai.sentinel.veto_applied";
+    public static final String METER_SENTINEL_FALLBACK = "ai.sentinel.fallback";
+    public static final String METER_SENTINEL_SKIPPED = "ai.sentinel.skipped";
+
+    /**
      * Connection FSM gauge — per-dependency lifecycle state ordinal. The Phase 5
      * S1 alert {@code anthropic_cb_unhealthy} (alert #11) keys off
      * {@code customMetrics.connection_state} where
@@ -291,6 +315,74 @@ public class AiAgentMetrics {
                 .tags(Tags.of("tenant_id", tenantId, "kind", kind))
                 .register(registry)
                 .increment(count);
+    }
+
+    /**
+     * Increment {@link #METER_SENTINEL_ALLOW} tagged by the
+     * {@code (tenant_id, level_swept, decision_path)} triple from ADR-0007 §3.
+     * {@code decisionPath} is the lower-snake-case label for the
+     * {@link com.levelsweep.aiagent.sentinel.SentinelDecisionResponse.DecisionPath}
+     * variant: {@code explicit_allow}, {@code low_confidence_veto_overridden},
+     * or {@code fallback_allow}.
+     */
+    public void sentinelAllow(String tenantId, String levelSwept, String decisionPath) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(levelSwept, "levelSwept");
+        Objects.requireNonNull(decisionPath, "decisionPath");
+        Counter.builder(METER_SENTINEL_ALLOW)
+                .description("Sentinel ALLOW outcomes per (tenant, level_swept, decision_path).")
+                .tags(Tags.of("tenant_id", tenantId, "level_swept", levelSwept, "decision_path", decisionPath))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Increment {@link #METER_SENTINEL_VETO_APPLIED} tagged by
+     * {@code (tenant_id, level_swept)} per ADR-0007 §3. Only fires when the
+     * model emitted VETO with {@code confidence >= 0.85} — lower-confidence
+     * vetoes are demoted to {@link #sentinelAllow} with
+     * {@code decision_path=low_confidence_veto_overridden}.
+     */
+    public void sentinelVetoApplied(String tenantId, String levelSwept) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(levelSwept, "levelSwept");
+        Counter.builder(METER_SENTINEL_VETO_APPLIED)
+                .description("Sentinel VETO outcomes (confidence ≥ 0.85) per (tenant, level_swept).")
+                .tags(Tags.of("tenant_id", tenantId, "level_swept", levelSwept))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Increment {@link #METER_SENTINEL_FALLBACK} tagged by
+     * {@code (tenant_id, reason)} per ADR-0007 §3 fail-OPEN table. Reason is
+     * the lower-snake-case label of
+     * {@link com.levelsweep.aiagent.sentinel.SentinelDecisionResponse.FallbackReason}.
+     */
+    public void sentinelFallback(String tenantId, String reason) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(reason, "reason");
+        Counter.builder(METER_SENTINEL_FALLBACK)
+                .description("Sentinel fail-OPEN fallback per (tenant, reason).")
+                .tags(Tags.of("tenant_id", tenantId, "reason", reason))
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * Increment {@link #METER_SENTINEL_SKIPPED} tagged by
+     * {@code (tenant_id, reason)} when the Sentinel was bypassed entirely
+     * (no Anthropic call, no audit row). Reason is currently always
+     * {@code flag_off} per ADR-0007 §7.
+     */
+    public void sentinelSkipped(String tenantId, String reason) {
+        Objects.requireNonNull(tenantId, "tenantId");
+        Objects.requireNonNull(reason, "reason");
+        Counter.builder(METER_SENTINEL_SKIPPED)
+                .description("Sentinel evaluations skipped without an Anthropic call (e.g. feature flag off).")
+                .tags(Tags.of("tenant_id", tenantId, "reason", reason))
+                .register(registry)
+                .increment();
     }
 
     /** Stable label values for the {@code reason} dimension on {@link #METER_NARRATOR_SKIPPED}. */
