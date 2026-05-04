@@ -1,0 +1,40 @@
+{
+  "name": "pdh_long_call_explicit_allow",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_001",
+    "signal_id": "SIG_REPLAY_001",
+    "direction": "LONG_CALL",
+    "level_swept": "PDH",
+    "indicator_snapshot": {
+      "ema13": "501.2500",
+      "ema48": "499.4000",
+      "ema200": "495.1500",
+      "atr14": "1.20",
+      "rsi2": "67.50",
+      "regime": "BULL",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:31:00Z", "close": "500.5000", "volume": 9800 },
+        { "ts": "2026-05-04T13:33:00Z", "close": "501.2500", "volume": 11200 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "501.7500", "volume": 12500 }
+      ]
+    },
+    "recent_trades_window": [
+      { "trade_id": "TR_PRIOR_001", "outcome": "WIN", "r_multiple": "1.5", "ts": "2026-05-04T13:00:00Z" },
+      { "trade_id": "TR_PRIOR_002", "outcome": "WIN", "r_multiple": "1.0", "ts": "2026-05-04T13:15:00Z" }
+    ],
+    "vix_close_prev": "14.50",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 200,
+    "body": "{\"id\":\"msg_replay_001\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"ALLOW\\\",\\\"confidence\\\":0.70,\\\"reason_code\\\":\\\"STRUCTURE_MATCH\\\",\\\"reason_text\\\":\\\"PDH sweep with EMAs aligned bullish; clean structure.\\\"}\"}],\"usage\":{\"input_tokens\":420,\"output_tokens\":42,\"cache_read_input_tokens\":0}}"
+  },
+  "expected": {
+    "type": "Allow",
+    "decision_path": "EXPLICIT_ALLOW",
+    "confidence": "0.70",
+    "reason_code": "STRUCTURE_MATCH",
+    "reason_text": "PDH sweep with EMAs aligned bullish; clean structure."
+  }
+}

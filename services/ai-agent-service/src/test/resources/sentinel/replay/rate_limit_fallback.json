@@ -1,0 +1,33 @@
+{
+  "name": "rate_limit_fallback",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_011",
+    "signal_id": "SIG_REPLAY_011",
+    "direction": "LONG_PUT",
+    "level_swept": "PML",
+    "indicator_snapshot": {
+      "ema13": "486.5000",
+      "ema48": "488.0000",
+      "ema200": "492.5000",
+      "atr14": "1.50",
+      "rsi2": "29.50",
+      "regime": "BEAR",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:33:00Z", "close": "487.0000", "volume": 11000 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "486.5000", "volume": 11500 }
+      ]
+    },
+    "recent_trades_window": [],
+    "vix_close_prev": "19.20",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 429,
+    "body": "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"requests per minute exceeded\"}}"
+  },
+  "expected": {
+    "type": "Fallback",
+    "fallback_reason": "RATE_LIMIT"
+  }
+}

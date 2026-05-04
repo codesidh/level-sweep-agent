@@ -1,0 +1,33 @@
+{
+  "name": "cb_open_fallback",
+  "request": {
+    "tenant_id": "OWNER",
+    "trade_id": "TR_REPLAY_008",
+    "signal_id": "SIG_REPLAY_008",
+    "direction": "LONG_CALL",
+    "level_swept": "PDH",
+    "indicator_snapshot": {
+      "ema13": "500.0000",
+      "ema48": "498.5000",
+      "ema200": "495.0000",
+      "atr14": "1.20",
+      "rsi2": "60.00",
+      "regime": "BULL",
+      "recent_bars": [
+        { "ts": "2026-05-04T13:33:00Z", "close": "500.0000", "volume": 10000 },
+        { "ts": "2026-05-04T13:35:00Z", "close": "500.5000", "volume": 11000 }
+      ]
+    },
+    "recent_trades_window": [],
+    "vix_close_prev": "14.00",
+    "now_utc": "2026-05-04T13:35:00Z"
+  },
+  "anthropic": {
+    "status": 0,
+    "body": "circuit_breaker_open"
+  },
+  "expected": {
+    "type": "Fallback",
+    "fallback_reason": "CB_OPEN"
+  }
+}
