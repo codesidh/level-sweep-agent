@@ -1,0 +1,57 @@
+{{- if .Values.networkPolicy.enabled }}
+# =============================================================================
+# Phase 6 NetworkPolicy. Calendar service is read-only reference data with
+# no external dependencies, so its egress can be tighter than the other
+# services — DNS only, plus HTTPS to App Insights for telemetry.
+#
+# Ingress: HTTP from anywhere in the same namespace (decision-engine
+# Session FSM, ai-agent-service Narrator, BFF). Phase 7 narrows this to
+# specific consumer SAs once the cluster has a stable inventory.
+#
+# Egress:
+#   - DNS to kube-system (kube-dns)
+#   - HTTPS anywhere (App Insights ingest)
+# Notably ABSENT vs journal-service: no Kafka (9092), no Mongo (27017) —
+# the calendar has neither.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "calendar-service.fullname" . }}
+  labels:
+    {{- include "calendar-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "calendar-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - port: {{ .Values.service.port }}
+          protocol: TCP
+  egress:
+    # DNS — kube-dns lives in kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # HTTPS to anywhere — App Insights ingest. Phase 7 tightens this to the
+    # App Insights ingestion FQDN allowlist.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+{{- end }}

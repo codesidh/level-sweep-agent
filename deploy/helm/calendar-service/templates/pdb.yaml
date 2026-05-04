@@ -1,0 +1,17 @@
+{{- /* PDB is only meaningful when strategy=RollingUpdate. With strategy=Recreate
+       (Phase 6 dev), the rollout intentionally takes the only pod down — a
+       PDB with minAvailable=1 would block voluntary evictions, breaking
+       cluster autoscaling, node drains, and AKS upgrades. */}}
+{{- if and .Values.podDisruptionBudget.enabled (eq (.Values.deployment.strategy | default "Recreate") "RollingUpdate") }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "calendar-service.fullname" . }}
+  labels:
+    {{- include "calendar-service.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "calendar-service.selectorLabels" . | nindent 6 }}
+{{- end }}

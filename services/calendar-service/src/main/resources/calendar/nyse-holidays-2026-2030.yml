@@ -1,0 +1,126 @@
+# =============================================================================
+# NYSE Closure + Early-Close Schedule, 2026 - 2030.
+#
+# Source: nyse.com/markets/hours-calendars (the NYSE publishes a 5-year
+# rolling holiday schedule as PDF + HTML). Hand-verified against that page;
+# half-days follow NYSE Rule 7.2 (early close at 13:00 ET).
+#
+# Observance rule (NYSE Rule 7.2):
+#   - Holiday on Saturday → observed prior Friday, EXCEPT New Year's Day:
+#     when Jan 1 falls on a Saturday, NO holiday is observed and the
+#     market is open on the prior Friday Dec 31. (This is why the 2028 set
+#     has no New Year's Day entry — Jan 1, 2028 is a Saturday.)
+#   - Holiday on Sunday → observed following Monday.
+#   - All other holidays observed on the calendar weekday.
+#
+# Half-day rules:
+#   - Day after Thanksgiving (Black Friday) — always a half-day if a weekday
+#     (always Friday, so always a half-day).
+#   - July 3, ONLY if it falls Mon-Fri AND July 4 is itself a weekday (i.e.
+#     not when July 4 falls on Sat/Sun and July 3 becomes the observed
+#     holiday — that day is a full closure, not a half-day).
+#   - Christmas Eve (Dec 24), ONLY if a weekday AND Dec 25 is itself a weekday
+#     (when Dec 25 falls Sat, observed Dec 24 → full closure, not half-day).
+#
+# Schema:
+#   holidays:        list of { date, name }            full closures
+#   earlyCloses:     list of { date, name }            13:00 ET close
+#
+# WHY HARD-CODED: per architecture-spec §22 the NYSE calendar isn't tracked as
+# an Open Implementation Decision. It's owned here in Phase 6: the dataset is
+# small + slow-changing + published years in advance, so an external API
+# would be net-negative on availability. Phase 7 may add a build-time
+# verification step that diffs this YAML against the NYSE PDF.
+# =============================================================================
+
+holidays:
+  # ---- 2026 ----
+  - { date: "2026-01-01", name: "New Year's Day" }
+  - { date: "2026-01-19", name: "Martin Luther King Jr. Day" }
+  - { date: "2026-02-16", name: "Washington's Birthday" }
+  - { date: "2026-04-03", name: "Good Friday" }
+  - { date: "2026-05-25", name: "Memorial Day" }
+  - { date: "2026-06-19", name: "Juneteenth National Independence Day" }
+  # July 4, 2026 falls on Saturday → observed Friday July 3.
+  - { date: "2026-07-03", name: "Independence Day (observed)" }
+  - { date: "2026-09-07", name: "Labor Day" }
+  - { date: "2026-11-26", name: "Thanksgiving Day" }
+  - { date: "2026-12-25", name: "Christmas Day" }
+
+  # ---- 2027 ----
+  - { date: "2027-01-01", name: "New Year's Day" }
+  - { date: "2027-01-18", name: "Martin Luther King Jr. Day" }
+  - { date: "2027-02-15", name: "Washington's Birthday" }
+  - { date: "2027-03-26", name: "Good Friday" }
+  - { date: "2027-05-31", name: "Memorial Day" }
+  # June 19, 2027 falls on Saturday → observed Friday June 18.
+  - { date: "2027-06-18", name: "Juneteenth National Independence Day (observed)" }
+  # July 4, 2027 falls on Sunday → observed Monday July 5.
+  - { date: "2027-07-05", name: "Independence Day (observed)" }
+  - { date: "2027-09-06", name: "Labor Day" }
+  - { date: "2027-11-25", name: "Thanksgiving Day" }
+  # Dec 25, 2027 falls on Saturday → observed Friday Dec 24.
+  - { date: "2027-12-24", name: "Christmas Day (observed)" }
+
+  # ---- 2028 ----
+  # Jan 1, 2028 falls on Saturday → NYSE Rule 7.2 → NO observance.
+  - { date: "2028-01-17", name: "Martin Luther King Jr. Day" }
+  - { date: "2028-02-21", name: "Washington's Birthday" }
+  - { date: "2028-04-14", name: "Good Friday" }
+  - { date: "2028-05-29", name: "Memorial Day" }
+  - { date: "2028-06-19", name: "Juneteenth National Independence Day" }
+  - { date: "2028-07-04", name: "Independence Day" }
+  - { date: "2028-09-04", name: "Labor Day" }
+  - { date: "2028-11-23", name: "Thanksgiving Day" }
+  - { date: "2028-12-25", name: "Christmas Day" }
+
+  # ---- 2029 ----
+  - { date: "2029-01-01", name: "New Year's Day" }
+  - { date: "2029-01-15", name: "Martin Luther King Jr. Day" }
+  - { date: "2029-02-19", name: "Washington's Birthday" }
+  - { date: "2029-03-30", name: "Good Friday" }
+  - { date: "2029-05-28", name: "Memorial Day" }
+  - { date: "2029-06-19", name: "Juneteenth National Independence Day" }
+  - { date: "2029-07-04", name: "Independence Day" }
+  - { date: "2029-09-03", name: "Labor Day" }
+  - { date: "2029-11-22", name: "Thanksgiving Day" }
+  - { date: "2029-12-25", name: "Christmas Day" }
+
+  # ---- 2030 ----
+  - { date: "2030-01-01", name: "New Year's Day" }
+  - { date: "2030-01-21", name: "Martin Luther King Jr. Day" }
+  - { date: "2030-02-18", name: "Washington's Birthday" }
+  - { date: "2030-04-19", name: "Good Friday" }
+  - { date: "2030-05-27", name: "Memorial Day" }
+  - { date: "2030-06-19", name: "Juneteenth National Independence Day" }
+  - { date: "2030-07-04", name: "Independence Day" }
+  - { date: "2030-09-02", name: "Labor Day" }
+  - { date: "2030-11-28", name: "Thanksgiving Day" }
+  - { date: "2030-12-25", name: "Christmas Day" }
+
+earlyCloses:
+  # ---- 2026 ----
+  # No July half-day in 2026 (July 3 is the observed Independence Day full
+  # closure; July 4 is Saturday).
+  - { date: "2026-11-27", name: "Day after Thanksgiving" }
+  - { date: "2026-12-24", name: "Christmas Eve" }
+
+  # ---- 2027 ----
+  # No July half-day (July 3 is Saturday, July 4 is Sunday, observed July 5).
+  - { date: "2027-11-26", name: "Day after Thanksgiving" }
+  # No Christmas Eve half-day (Dec 24 is the observed Christmas full closure).
+
+  # ---- 2028 ----
+  - { date: "2028-07-03", name: "Day before Independence Day" }
+  - { date: "2028-11-24", name: "Day after Thanksgiving" }
+  # No Christmas Eve half-day (Dec 24 is Sunday).
+
+  # ---- 2029 ----
+  - { date: "2029-07-03", name: "Day before Independence Day" }
+  - { date: "2029-11-23", name: "Day after Thanksgiving" }
+  - { date: "2029-12-24", name: "Christmas Eve" }
+
+  # ---- 2030 ----
+  - { date: "2030-07-03", name: "Day before Independence Day" }
+  - { date: "2030-11-29", name: "Day after Thanksgiving" }
+  - { date: "2030-12-24", name: "Christmas Eve" }
