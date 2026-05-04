@@ -1,7 +1,6 @@
 package com.levelsweep.marketdata.messaging;
 
 import com.levelsweep.shared.domain.indicators.IndicatorSnapshot;
-import io.quarkus.arc.profile.UnlessBuildProfile;
 import io.smallrye.reactive.messaging.MutinyEmitter;
 import io.smallrye.reactive.messaging.kafka.Record;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -36,13 +35,11 @@ import org.slf4j.LoggerFactory;
  * <p>The actual topic name is configured for this channel in {@code application.yml};
  * this class only references the channel by name.
  *
- * <p>Disabled in the {@code prod} profile during Phase 1 — same rationale as
- * {@link BarEmitter}: the dev cluster does not run Kafka (Strimzi lands in Phase 6
- * per architecture-spec §12). The {@code %prod} application.yml swap routes this
- * channel to {@code smallrye-in-memory} so the producer constructs cleanly at boot.
+ * <p>Phase 7 enabled this in production: Strimzi/Kafka now runs in the dev
+ * cluster (`infra/k8s-dev/kafka.yaml`). The previous `@UnlessBuildProfile("prod")`
+ * gate has been removed; the channel routes to actual Kafka in all profiles.
  */
 @ApplicationScoped
-@UnlessBuildProfile("prod")
 public class IndicatorSnapshotEmitter {
 
     private static final Logger LOG = LoggerFactory.getLogger(IndicatorSnapshotEmitter.class);

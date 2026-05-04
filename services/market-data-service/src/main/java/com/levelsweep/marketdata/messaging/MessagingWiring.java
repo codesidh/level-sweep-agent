@@ -1,7 +1,6 @@
 package com.levelsweep.marketdata.messaging;
 
 import com.levelsweep.marketdata.live.LivePipeline;
-import io.quarkus.arc.profile.UnlessBuildProfile;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -20,11 +19,10 @@ import org.slf4j.LoggerFactory;
  * so a Kafka publish blowup cannot kill bar delivery to the indicator engine or
  * persistence sink, nor stall snapshot delivery to other subscribers.
  *
- * <p>Disabled in the {@code prod} profile during Phase 1 — same rationale as
- * {@link BarEmitter}: no Kafka cluster runs in dev until Phase 6.
+ * <p>Phase 7 enabled this in production: Strimzi/Kafka now runs in the dev
+ * cluster (`infra/k8s-dev/kafka.yaml`).
  */
 @ApplicationScoped
-@UnlessBuildProfile("prod")
 public class MessagingWiring {
 
     private static final Logger LOG = LoggerFactory.getLogger(MessagingWiring.class);
