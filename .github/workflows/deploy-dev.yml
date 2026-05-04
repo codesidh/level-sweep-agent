@@ -504,6 +504,28 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-user-config-service:
     name: deploy user-config-service to dev
+  # Phase 6 — notification-service deploy. Mirrors the journal-service job
+  # above. Lives in its own namespace `notification-service` so a failed
+  # deploy of one service does not block the others. The federated-identity
+  # binding for the SA
+  #   system:serviceaccount:notification-service:notification-service
+  # is created by `infra/environments/dev/main.tf` →
+  # azurerm_federated_identity_credential.notification_service_sa, which
+  # must be applied by iac.yml before this job runs successfully against a
+  # fresh cluster.
+  #
+  # Operator setup before first prod-grade run: mirror SMTP credentials
+  # (smtp-username, smtp-password) and the destination mailbox (email-to)
+  # into Key Vault. Until those secrets exist, the chart's CSI mounts
+  # them as `optional: true` and EmailDispatcher logs-only:
+  #   az keyvault secret set --vault-name <KV> --name smtp-username --value "..."
+  #   az keyvault secret set --vault-name <KV> --name smtp-password --value "..."
+  #   az keyvault secret set --vault-name <KV> --name email-to --value "codesidh@gmail.com"
+  # No KV secret is mandatory for the Phase 6 dev deploy — the SMTP path
+  # gracefully degrades to log-only when credentials are absent.
+  # ---------------------------------------------------------------------------
+  deploy-notification-service:
+    name: deploy notification-service to dev
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -564,6 +586,10 @@ jobs:
             --namespace user-config-service \
             --create-namespace \
             --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/user-config-service" \
+          helm upgrade --install notification-service deploy/helm/notification-service \
+            --namespace notification-service \
+            --create-namespace \
+            --set image.repository="${{ secrets.ACR_LOGIN_SERVER }}/notification-service" \
             --set image.tag="${{ steps.sha.outputs.value }}" \
             --set workloadIdentity.clientId="${{ secrets.AKS_KUBELET_CLIENT_ID }}" \
             --set keyVault.tenantId="${{ secrets.AZURE_TENANT_ID }}" \
@@ -583,6 +609,10 @@ jobs:
           kubectl -n user-config-service get pods,svc
 
       - name: Dump pod state on failure (user-config-service)
+          kubectl -n notification-service rollout status deployment/notification-service --timeout=5m
+          kubectl -n notification-service get pods,svc
+
+      - name: Dump pod state on failure (notification-service)
         if: failure()
         run: |
           echo "::group::nodes"
@@ -609,4 +639,14 @@ jobs:
           echo "::endgroup::"
           echo "::group::logs"
           kubectl -n user-config-service logs -l app.kubernetes.io/name=user-config-service --tail=200 --all-containers || true
+          kubectl -n notification-service get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl -n notification-service describe pods -l app.kubernetes.io/name=notification-service || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl -n notification-service get events --sort-by='.lastTimestamp' | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          kubectl -n notification-service logs -l app.kubernetes.io/name=notification-service --tail=200 --all-containers || true
           echo "::endgroup::"

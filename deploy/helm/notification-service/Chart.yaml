@@ -1,0 +1,6 @@
+apiVersion: v2
+name: notification-service
+description: Phase 6 Notification Service — cold-path Kafka fan-out (Spring Boot 3.x). Subscribes to the `notifications` topic; dispatches to email (SMTP via JavaMailSender) + SMS (Phase 7 Twilio stub); writes notifications.outbox Mongo collection with sha256 dedupe key.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
