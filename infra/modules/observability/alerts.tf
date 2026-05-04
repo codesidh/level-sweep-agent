@@ -704,3 +704,224 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "reviewer_run_missing"
 
   tags = var.tags
 }
+
+# =============================================================================
+# Phase 6 alerts (alerts 14-17) — Cold-path services (Journal / Notification /
+# BFF). Adds visibility for the audit, alert delivery, and edge-API tiers
+# introduced in Phase 6.
+#
+# Strimzi (Kafka) and Mongo are NOT yet deployed in dev (Phase 6 follow-up + 7).
+# Until they are, alerts that depend on Kafka/Mongo telemetry will sit in
+# Insufficient Data — that is the desired state, not a fault. The alerts are
+# wired now so that the moment those dependencies land, observability is
+# already in place; Phase 7 will additionally provision a synthetic heartbeat
+# so "service silently absent" surfaces as a P1 instead of a quiet gap.
+#
+# All four reuse the Phase 1 action group; Phase 7 splits high-severity
+# escalation onto a Twilio-backed group.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 14. BFF 5xx error rate elevated (P2)
+# -----------------------------------------------------------------------------
+# api-gateway-bff is the user-facing edge — sustained 5xx means the operator
+# UI / external API consumers are seeing failures. The Spring Boot app
+# auto-instruments HTTP requests via the App Insights agent, which lands in
+# the `requests` table with success == false on 5xx.
+# Threshold 5% over a 15-minute window with at least 20 requests; lower
+# baselines are noise from one-off errors. Severity 2 — operator action
+# required but no real-money risk.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "bff_5xx_rate" {
+  name                = "alert-${var.project}-${var.environment}-bff-5xx-rate"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT15M"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 2
+  enabled              = true
+
+  description             = "api-gateway-bff is returning 5xx for > 5% of requests over the last 15 minutes (with at least 20 requests in window). Operator UI and external API consumers are degraded. Investigate: downstream service down? config drift? auth provider outage?"
+  display_name            = "P2 — BFF 5xx error rate > 5% (15m)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      requests
+      | where cloud_RoleName == "api-gateway-bff"
+      | summarize total = count(), failed = countif(toint(resultCode) >= 500) by bin(timestamp, 5m)
+      | where total >= 20
+      | extend fail_pct = 100.0 * failed / total
+      | where fail_pct > 5
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 2 # 2 of 3 5-minute bins
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 15. Journal Mongo write failure rate (P2 — DISABLED until Mongo lands)
+# -----------------------------------------------------------------------------
+# journal-service is the audit-of-record (architecture-spec §6: CP for write).
+# The App Insights Java agent auto-instruments Mongo and emits per-call rows
+# in `dependencies`. A sustained > 30% failure rate means audit data is
+# silently dropping — Phase 7 adds 17a-4 WORM compliance which makes a
+# missing audit row a P1, but Phase 6 (paper) treats it as P2.
+# DISABLED until in-cluster Mongo is deployed (Phase 6 follow-up). Flip
+# enabled = true alongside the Mongo Helm release.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "journal_mongo_write_failures" {
+  name                = "alert-${var.project}-${var.environment}-journal-mongo-write-failures"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT15M"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 2
+  enabled              = false
+
+  description             = "journal-service Mongo write failure rate > 30% over the last 15 minutes — audit data is dropping silently. Phase 7 escalates to P1 once 17a-4 WORM retention is gated on this stream. DISABLED until in-cluster Mongo is deployed."
+  display_name            = "P2 — Journal Mongo write failures > 30% (15m, DISABLED until Mongo in cluster)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      dependencies
+      | where cloud_RoleName == "journal-service"
+      | where type == "MongoDB" or target startswith "mongo"
+      | summarize total = count(), failed = countif(success == false) by bin(timestamp, 5m)
+      | where total > 0
+      | extend fail_pct = 100.0 * failed / total
+      | where fail_pct > 30
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 2
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 16. Notification dispatch failure rate (P3)
+# -----------------------------------------------------------------------------
+# notification-service writes a row to notifications.outbox per delivery
+# attempt with status in (SENT, SKIPPED, FAILED). EmailDispatcher logs the
+# message "notification dispatch failed" with the recipient + reason on the
+# FAILED branch. We aggregate that log line over a 1-hour window — this
+# catches both transient SMTP outages and chronic config drift.
+#
+# Severity 3 because alerts are eventually-delivered (architecture-spec §6 AP)
+# and the outbox row enables manual replay. Severity escalates to P1 once
+# Twilio SMS is wired in Phase 7 (a missed P1 trade alert IS real-money risk).
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "notification_dispatch_failures" {
+  name                = "alert-${var.project}-${var.environment}-notification-dispatch-failures"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT15M"
+  window_duration      = "PT1H"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 3
+  enabled              = true
+
+  description             = "notification-service logged 'notification dispatch failed' more than 5 times in the last hour. Outbox rows record FAILED — manual replay possible. Investigate SMTP relay availability, credentials drift, or rate-limit. Phase 7 escalates to P1 once Twilio SMS lands."
+  display_name            = "P3 — Notification dispatch failures > 5 (1h)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      traces
+      | where cloud_RoleName == "notification-service"
+      | where message contains "notification dispatch failed"
+      | summarize failures = count() by bin(timestamp, 15m)
+      | where failures > 5
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# 17. Pod restart storm (P2)
+# -----------------------------------------------------------------------------
+# The App Insights Java agent emits a "ContainerStarted" customEvent on every
+# JVM boot. A pod restarting more than 3 times in a 30-minute window is in
+# CrashLoopBackOff or worse. This catches the Phase 6 class of failures (Kafka
+# bootstrap unresolvable, Mongo unreachable, Flyway against a missing MS SQL)
+# that PR #109 specifically solves — once that PR is in place, this alert
+# serves as a regression detector for the same class of issue.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "pod_restart_storm" {
+  name                = "alert-${var.project}-${var.environment}-pod-restart-storm"
+  resource_group_name = azurerm_resource_group.obs.name
+  location            = azurerm_resource_group.obs.location
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT30M"
+  scopes               = [azurerm_application_insights.main.id]
+  severity             = 2
+  enabled              = true
+
+  description             = "A LevelSweep pod restarted more than 3 times in the last 30 minutes — likely CrashLoopBackOff. Correlate with the failing service's traces. Recurring offenders in Phase 6: Kafka bootstrap unresolvable, Mongo unreachable, Flyway against a missing MS SQL."
+  display_name            = "P2 — Pod restart storm (>3 restarts/30m)"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      customEvents
+      | where name == "ContainerStarted"
+      | extend role = tostring(cloud_RoleName)
+      | where role != ""
+      | summarize starts = count() by role, bin(timestamp, 30m)
+      | where starts > 3
+    KQL
+    time_aggregation_method = "Count"
+    threshold               = 1
+    operator                = "GreaterThanOrEqual"
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.phase1.id]
+  }
+
+  tags = var.tags
+}
