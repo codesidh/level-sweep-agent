@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -48,6 +50,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * doesn't try to curl the API without the header and get a confusing 401.
  */
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE) // Must run before RateLimitFilter (+10) so tenantId attribute is stamped first
 public class BypassAuthFilter extends OncePerRequestFilter {
 
     private static final Logger LOG = LoggerFactory.getLogger(BypassAuthFilter.class);

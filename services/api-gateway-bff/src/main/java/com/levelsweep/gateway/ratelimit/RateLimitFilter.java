@@ -82,7 +82,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return path.startsWith("/actuator/") || path.equals("/api/health");
+        if (path.startsWith("/actuator/") || path.equals("/api/health")) {
+            return true;
+        }
+        // CORS preflight bypasses BypassAuthFilter so no tenantId attribute is
+        // stamped — must skip rate-limit too. Spring's CorsFilter responds to
+        // OPTIONS with the right headers.
+        return "OPTIONS".equalsIgnoreCase(request.getMethod());
     }
 
     @Override
