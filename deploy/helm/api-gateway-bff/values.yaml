@@ -115,16 +115,25 @@ healthCheck:
     # /actuator/health. Liveness fails only on irrecoverable JVM errors
     # (OOM, deadlock). A downstream being unreachable is NOT a liveness
     # failure — the BFF gracefully degrades the dashboard summary.
+    #
+    # initialDelaySeconds=90 covers the ~40s App Insights Java agent warmup
+    # (-javaagent:applicationinsights-agent.jar) plus Spring Boot context
+    # init before the actuator endpoint binds to 8090. The earlier 30s value
+    # caused CrashLoopBackOff: kubelet got `connection refused` on
+    # /actuator/health/liveness, hit failureThreshold (3 × 10s = 30s grace
+    # past the initial delay = ~60s total) before the agent finished loading.
     path: /actuator/health/liveness
-    initialDelaySeconds: 30
+    initialDelaySeconds: 90
     periodSeconds: 10
+    failureThreshold: 6
   readiness:
     # Readiness intentionally does NOT include downstream probes — the BFF
     # is ready as soon as Spring Boot is up. Downstream availability is
     # handled per-call (timeout + degraded marker).
     path: /actuator/health/readiness
-    initialDelaySeconds: 5
+    initialDelaySeconds: 30
     periodSeconds: 5
+    failureThreshold: 6
 
 podDisruptionBudget:
   enabled: true
