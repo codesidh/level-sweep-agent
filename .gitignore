@@ -138,3 +138,14 @@ temp/
 # Local overrides not committed
 local.gradle
 local-config.yml
+
+# --- Claude Code agent configuration & rules — local-only ---
+# CLAUDE.md (project guardrails) and the .claude/ skills/settings/state are
+# operator IP describing how Claude should behave on this codebase. Kept on
+# the local machine only; never committed/pushed. To true-purge from prior
+# git history requires `git filter-repo --invert-paths --path CLAUDE.md
+# --path .claude/ && git push --force` — destructive (rewrites all hashes,
+# breaks open PRs and forks). Repo visibility (public → private) is the
+# simpler defense if available.
+CLAUDE.md
+.claude/
