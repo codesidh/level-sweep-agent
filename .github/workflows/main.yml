@@ -341,6 +341,146 @@ jobs:
           ignore-unfixed: true
 
   # ---------------------------------------------------------------------------
+  # Container build + Trivy scan + push (Phase 7: decision-engine). Mirrors
+  # the execution-service container job — same OIDC + ACR + GHCR + Buildx
+  # flow, gated per-service by dorny/paths-filter so changes that don't
+  # touch decision-engine / shared / gradle don't rebuild this image.
+  # Native-image swap is Phase 7 later sub-step per architecture-spec §15.
+  # ---------------------------------------------------------------------------
+  containers-decision-engine:
+    name: containers (decision-engine)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write    # OIDC for `azure/login` so we can push to ACR.
+    steps:
+      - uses: actions/checkout@v4
+
+      # Per-service paths filter — skip the rest of the job when the push
+      # didn't touch decision-engine / shared / gradle. Mirrors the
+      # dorny/paths-filter pattern used in pr.yml.
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            decision_engine:
+              - 'services/decision-engine/**'
+              - 'shared/**'
+              - 'gradle/**'
+              - 'gradlew'
+              - 'gradlew.bat'
+              - '**/*.gradle.kts'
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - '.github/workflows/main.yml'
+              - 'deploy/helm/decision-engine/**'
+
+      - name: Set up JDK 21
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Pin to 8.10.2 to match the wrapper. Quarkus 3.15.1 plugin is not
+          # yet compatible with Gradle 9.x.
+          gradle-version: 8.10.2
+
+      - name: Bootstrap Gradle wrapper jar
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin
+
+      # quarkusBuild produces the fast-jar layout under build/quarkus-app/
+      # without re-running the test suite (already covered by the `build` job).
+      - name: Assemble decision-engine fast-jar
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        run: ./gradlew :services:decision-engine:quarkusBuild --no-daemon
+
+      - name: Log in to GHCR
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Azure OIDC + ACR login. Gated on main-branch (push or workflow_dispatch)
+      # so PRs from forks — which don't have OIDC secret access — don't fail.
+      # Also skipped when ACR_LOGIN_SERVER is unset, so the workflow stays
+      # GHCR-only until the operator wires the dev environment secrets.
+      - name: Azure login (OIDC)
+        if: (steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_LOGIN_SERVER != ''
+        uses: azure/login@v2
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        if: (steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ACR_NAME != ''
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+        run: az acr login --name "${ACR_NAME}"
+
+      - name: Set up Buildx
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image tags
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        id: tags
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          GHCR_BASE="ghcr.io/${OWNER}/${REPO}/decision-engine"
+          echo "ghcr_base=${GHCR_BASE}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_sha=${GHCR_BASE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_latest=${GHCR_BASE}:latest" >> "$GITHUB_OUTPUT"
+          # Build a multi-line tag list. ACR tags are conditional on the
+          # ACR_LOGIN_SERVER secret being set.
+          {
+            echo "all_tags<<EOF"
+            echo "${GHCR_BASE}:${GITHUB_SHA}"
+            echo "${GHCR_BASE}:latest"
+            if [ -n "${ACR_LOGIN_SERVER}" ]; then
+              echo "${ACR_LOGIN_SERVER}/decision-engine:${GITHUB_SHA}"
+              echo "${ACR_LOGIN_SERVER}/decision-engine:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build + push image
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/decision-engine
+          file: services/decision-engine/src/main/docker/Dockerfile.jvm
+          push: true
+          tags: ${{ steps.tags.outputs.all_tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy scan image
+        if: steps.filter.outputs.decision_engine == 'true' || github.event_name == 'workflow_dispatch'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.tags.outputs.ghcr_sha }}
+          severity: HIGH,CRITICAL
+          exit-code: 0   # Phase 7: report only. Phase 7 later sub-step flips to 1.
+          ignore-unfixed: true
+
+  # ---------------------------------------------------------------------------
   # Container build + Trivy scan + push (Phase 4: ai-agent-service). Mirrors
   # the execution-service container job — same OIDC + ACR + GHCR + Buildx
   # flow, gated per-service by dorny/paths-filter so docs / market-data-only

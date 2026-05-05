@@ -341,6 +341,31 @@ resource "azurerm_federated_identity_credential" "api_gateway_bff_sa" {
   subject             = "system:serviceaccount:api-gateway-bff:api-gateway-bff"
 }
 
+# Phase 7: decision-engine (hot-path Quarkus saga + signal + risk + strike)
+# binds to the same kubelet MI via its own federated credential. Subject must
+# match the deploy-dev.yml `--namespace` + ServiceAccount name produced by
+# the Helm chart (`system:serviceaccount:decision-engine:decision-engine`).
+# The service runs at 200m CPU / 512 MiB requests — lighter than the other
+# Quarkus hot-path pods because the saga is bar-close-driven (one evaluation
+# per tenant per 2-min bar) — so the existing 2 × Standard_D2s_v4 dev cluster
+# has the headroom (~4 GiB used across all four hot-path pods + cold-paths
+# of 16 GiB available). Phase 7 splits this off into a dedicated per-service
+# workload MI alongside market-data-service / execution-service /
+# ai-agent-service.
+#
+# This federated credential MUST be applied (terraform apply) before
+# deploy-dev.yml's deploy-decision-engine job runs successfully against a
+# fresh cluster — otherwise the SA's CSI mount fails and the pod stays in
+# ContainerCreating.
+resource "azurerm_federated_identity_credential" "decision_engine_sa" {
+  name                = "fc-${var.project}-${local.environment}-decision-engine"
+  resource_group_name = module.aks.cluster_resource_group
+  parent_id           = module.aks.kubelet_user_assigned_identity_id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = module.aks.oidc_issuer_url
+  subject             = "system:serviceaccount:decision-engine:decision-engine"
+}
+
 resource "azurerm_role_assignment" "kubelet_kv_secrets_user" {
   scope                = module.keyvault.kv_id
   role_definition_name = "Key Vault Secrets User"

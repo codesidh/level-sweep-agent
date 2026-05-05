@@ -1,0 +1,6 @@
+apiVersion: v2
+name: decision-engine
+description: Phase 2 decision engine — indicator + signal + risk + strike + trade saga (Quarkus)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,179 @@
+# =============================================================================
+# Default values for decision-engine.
+#
+# DEPLOYMENT NOTE (Phase 7): this chart deploys the decision-engine service
+# (signal evaluation + risk FSM + strike selector + trade saga, per
+# architecture-spec §4.4 and ADR-0007). The dev AKS cluster (2 ×
+# Standard_D2s_v4, 4 vCPU / 16 GiB total) already hosts market-data-service +
+# execution-service + ai-agent-service; decision-engine adds a fourth
+# Quarkus pod at 200m CPU / 512 MiB requests, well within the remaining
+# headroom (~12 GiB free across the four service pods).
+#
+# Per-environment overrides are passed via `helm upgrade --install --set ...`
+# from .github/workflows/deploy-dev.yml. Do NOT put secrets here — KV-mounted
+# values flow in via the Azure Key Vault CSI SecretProviderClass. Phase 7's
+# only KV mount is the App Insights connection string (optional); MS SQL +
+# Mongo land in Phase 7's later steps when managed Azure SQL / Cosmos
+# replace the in-cluster placeholders.
+# =============================================================================
+
+image:
+  # set per env in the deploy workflow, e.g. "<acr>.azurecr.io/decision-engine".
+  repository: ""
+  # overridden per push to the immutable git SHA.
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Phase 7 single-instance per architecture-spec §16. The trade saga's in-process
+# FSM state (RiskService, SessionService, TradeService) must remain
+# single-writer until Phase 7+ moves it onto Mongo / MS SQL with optimistic
+# locking. Multi-replica + leader election is a deliberate later phase.
+replicas: 1
+
+# Deployment strategy. Dev cluster runs four hot-path service pods at
+# ~250m CPU each; RollingUpdate would create a second decision-engine pod
+# (maxSurge=1) that competes with the existing market-data / execution / ai-agent
+# pods for the same node and stays Pending until Helm's `--wait` times out.
+# Recreate kills the old pod first → ~10s downtime → no resource contention.
+# Phase 7 production overrides this to RollingUpdate once the cluster has
+# 3+ nodes and the saga state is externalized.
+deployment:
+  strategy: Recreate
+  # maxSurge/maxUnavailable only used when strategy is RollingUpdate.
+  maxSurge: 1
+  maxUnavailable: 0
+
+service:
+  # decision-engine binds 8082 per services/decision-engine/src/main/resources/application.yml
+  # (quarkus.http.port: 8082). market-data-service uses 8080, execution-service
+  # 8083, ai-agent-service 8084 — each Quarkus pod gets a distinct port to make
+  # local kubectl port-forward + cross-service in-cluster calls trivially
+  # debuggable.
+  port: 8082
+  type: ClusterIP
+
+# Per task spec: cpu 200m / memory 512Mi req, 1Gi limit. Lighter than the
+# other Quarkus hot-path services because the saga is bar-close-driven (one
+# evaluation per tenant per 2-min bar) — no streaming throughput like
+# market-data-service or order-flow burst like execution-service.
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    # Memory limit only — no CPU limit per Quarkus + JDK 21 best practice on
+    # K8s (CFS throttling kills latency tail). The HPA is added in Phase 7+.
+    memory: 1Gi
+
+# Plain-text application config. Anything secret comes from keyVault.objects.
+env:
+  TENANT_ID: "OWNER"
+  # Kafka bootstrap — the saga consumes market.bars.* + market.indicators.2m
+  # and produces tenant.commands per application.yml. Phase 6 introduces the
+  # Strimzi cluster at this address; until then the four bars-* incoming
+  # channels swap to the in-memory connector under %prod, so a bogus
+  # bootstrap is safe in dev.
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+  # Mongo — bar history + audit reads. Health is disabled in application.yml
+  # under %prod so a transient Mongo outage doesn't flap liveness; readiness
+  # is FSM-driven.
+  MONGO_URL: "mongodb://mongo.mongo.svc.cluster.local:27017/level_sweep"
+  MONGO_DB: "level_sweep"
+  # Force the Quarkus profile to %prod so application.yml's
+  # `quarkus.opentelemetry.enabled: false` override kicks in. The App
+  # Insights Java agent (loaded as -javaagent in Dockerfile.jvm) owns the
+  # OTel pipeline in production; Quarkus' own OTel SDK is disabled to
+  # prevent double-emit + lifecycle races.
+  QUARKUS_PROFILE: "prod"
+  # Local-only OTel endpoint default. Unused in production because
+  # quarkus.opentelemetry.enabled is false under %prod, but kept so
+  # configuration shape matches dev / replay where Quarkus OTel is on.
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  # OTel service.name — App Insights agent reads this and stamps it as
+  # cloud_RoleName on every trace/log/metric. Without it, queries that
+  # filter on cloud_RoleName == "decision-engine" see zero rows
+  # (the agent default is "unknown_service:java").
+  OTEL_SERVICE_NAME: "decision-engine"
+  # Phase 5 S5 — Pre-Trade Sentinel feature flag (ADR-0007 §7). Default OFF
+  # — both the remote ai-agent-service and the decision-engine saga consult
+  # this flag (defense in depth). The saga's state graph is byte-identical
+  # to the pre-Sentinel one when this is OFF, so existing replay parity
+  # tests still pass. Operators flip both ON simultaneously only after the
+  # Phase 4 soak (5+ RTH sessions on real Anthropic) clears.
+  # The flag value drives `levelsweep.sentinel.enabled` via Quarkus' env
+  # binding (microprofile-config underscore-to-dot mapping).
+  LEVELSWEEP_SENTINEL_ENABLED: "false"
+  # In-cluster URL for the ai-agent-service Pre-Trade Sentinel REST endpoint.
+  # AKS namespace `ai-agent`, default port 8084. Used by SentinelClient when
+  # the flag above flips ON. Defense in depth: the saga's SentinelGate also
+  # short-circuits to Outcome.Skip when the flag is OFF, so this URL is dead
+  # weight until both ends flip simultaneously.
+  LEVELSWEEP_AI_AGENT_URL: "http://ai-agent-service.ai-agent:8084"
+
+# Workload identity binding (Azure AD federated → K8s ServiceAccount).
+workloadIdentity:
+  enabled: true
+  # Per-env: AKS-bound user-assigned MI client id. Phase 7 reuses the kubelet
+  # MI federated to the SA; a future per-service workload MI swap is tracked
+  # alongside the other hot-path services.
+  clientId: ""
+
+keyVault:
+  enabled: true
+  # Per-env Azure AD tenant ID.
+  tenantId: ""
+  # Bare KV name (not URI). Set by the deploy workflow to keep template-side
+  # parsing trivial.
+  name: ""
+  # KV URI is stored on the SecretProviderClass too for traceability /
+  # downstream tooling.
+  vaultUri: ""
+  objects:
+    - name: applicationinsights-connection-string
+      type: secret
+      env: APPLICATIONINSIGHTS_CONNECTION_STRING
+      optional: true
+    # mssql-password + mongo-url intentionally NOT mounted in Phase 7 dev.
+    # Managed Azure SQL Database + Cosmos / MongoDB Atlas land in later
+    # Phase 7 sub-steps per architecture-spec §13.1 / §13.2; until then,
+    # the saga's repository writes catch SQL/Mongo exceptions and log a WARN
+    # (the FSM transition still completes, just without persistence).
+    # Adding the mounts back here is a one-line change once the managed
+    # services are provisioned and KV is seeded.
+
+# Forward-compat keys mirrored from the execution-service / ai-agent-service
+# chart shape so the deploy-dev.yml --set list can stay symmetric across
+# services. Templates ignore these today; a future chart bump can wire them
+# in without a workflow edit.
+appInsights:
+  connectionStringSecretName: applicationinsights-connection-string
+
+mongo:
+  urlSecretName: mongo-url
+
+healthCheck:
+  liveness:
+    path: /q/health/live
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    path: /q/health/ready
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+
+serviceAccount:
+  # Auto-derive from chart fullname when name is empty.
+  name: ""
+
+# Pod-level security context. Container-level overrides applied in deployment.yaml.
+podSecurityContext:
+  fsGroup: 100
+  runAsNonRoot: true
+  runAsUser: 100
