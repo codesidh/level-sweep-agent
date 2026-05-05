@@ -120,6 +120,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n market-data rollout restart deployment/market-data-service
           kubectl -n market-data rollout status deployment/market-data-service --timeout=5m
           kubectl -n market-data get pods,svc
 
@@ -228,6 +229,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n execution-service rollout restart deployment/execution-service
           kubectl -n execution-service rollout status deployment/execution-service --timeout=5m
           kubectl -n execution-service get pods,svc
 
@@ -343,6 +345,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n decision-engine rollout restart deployment/decision-engine
           kubectl -n decision-engine rollout status deployment/decision-engine --timeout=5m
           kubectl -n decision-engine get pods,svc
 
@@ -459,6 +462,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n ai-agent rollout restart deployment/ai-agent-service
           kubectl -n ai-agent rollout status deployment/ai-agent-service --timeout=5m
           kubectl -n ai-agent get pods,svc
 
@@ -564,6 +568,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n journal-service rollout restart deployment/journal-service
           kubectl -n journal-service rollout status deployment/journal-service --timeout=5m
           kubectl -n journal-service get pods,svc
 
@@ -665,6 +670,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n calendar-service rollout restart deployment/calendar-service
           kubectl -n calendar-service rollout status deployment/calendar-service --timeout=5m
           kubectl -n calendar-service get pods,svc
 
@@ -770,6 +776,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n user-config-service rollout restart deployment/user-config-service
           kubectl -n user-config-service rollout status deployment/user-config-service --timeout=5m
           kubectl -n user-config-service get pods,svc
 
@@ -879,6 +886,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n notification-service rollout restart deployment/notification-service
           kubectl -n notification-service rollout status deployment/notification-service --timeout=5m
           kubectl -n notification-service get pods,svc
 
@@ -984,6 +992,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n projection-service rollout restart deployment/projection-service
           kubectl -n projection-service rollout status deployment/projection-service --timeout=5m
           kubectl -n projection-service get pods,svc
 
@@ -1093,6 +1102,7 @@ jobs:
 
       - name: Verify rollout
         run: |
+          kubectl -n api-gateway-bff rollout restart deployment/api-gateway-bff
           kubectl -n api-gateway-bff rollout status deployment/api-gateway-bff --timeout=5m
           kubectl -n api-gateway-bff get pods,svc
 
