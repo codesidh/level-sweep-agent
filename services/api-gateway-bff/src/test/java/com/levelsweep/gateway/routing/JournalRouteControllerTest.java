@@ -42,7 +42,7 @@ class JournalRouteControllerTest {
 
         assertThat(r.getStatusCode().value()).isEqualTo(200);
         assertThat(r.getBody()).isEqualTo("[{\"event\":\"trade\"}]");
-        verify(uriSpec).uri("/audit/OWNER?from=2026-05-01&to=2026-05-02&type=trade");
+        verify(uriSpec).uri("/journal/OWNER?from=2026-05-01&to=2026-05-02&type=trade");
         verify(headerSpec).header("X-Tenant-Id", "OWNER");
     }
 
@@ -63,7 +63,7 @@ class JournalRouteControllerTest {
         c.journal("OWNER", null, "", "  ");
 
         // Only the bare path; no query params.
-        verify(uriSpec).uri("/audit/OWNER");
+        verify(uriSpec).uri("/journal/OWNER");
     }
 
     @Test

@@ -30,7 +30,7 @@ class ProjectionRouteControllerTest {
 
         assertThat(r.getStatusCode().value()).isEqualTo(200);
         assertThat(r.getBody()).isEqualTo("{\"projection\":\"data\"}");
-        verify(uriSpec).uri("/projection/OWNER/last");
+        verify(uriSpec).uri("/projection/last/OWNER");
         verify(headerSpec).header("X-Tenant-Id", "OWNER");
     }
 
@@ -52,7 +52,7 @@ class ProjectionRouteControllerTest {
 
         assertThat(r.getStatusCode().value()).isEqualTo(200);
         assertThat(r.getBody()).isEqualTo("{\"status\":\"queued\"}");
-        verify(uriSpec).uri("/projection/OWNER/run");
+        verify(uriSpec).uri("/projection/run");
         verify(bodySpec).header("X-Tenant-Id", "OWNER");
     }
 }
