@@ -74,6 +74,13 @@ public class BypassAuthFilter extends OncePerRequestFilter {
         if (path.startsWith("/actuator/") || path.equals("/api/health")) {
             return true;
         }
+        // CORS preflight: browsers send OPTIONS without custom headers (the
+        // X-Tenant-Id header is sent on the actual GET/POST that follows).
+        // Spring's CorsFilter handles the preflight response itself; this
+        // filter must step aside so the browser's preflight succeeds.
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
         // Phase B takes over: this filter steps aside, Auth0JwtFilter runs.
         return phaseBJwtAuthEnabled;
     }
