@@ -45,11 +45,115 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # detect-changes — per-service path filter so a PR that touches only one
+  # service redeploys ONLY that service. Earlier the workflow re-rolled all
+  # 10 services on every push, which reset the soak counter for any service
+  # in active soak (CLAUDE.md guardrail #8). Now the rollout is scoped to
+  # the actually-changed service.
+  #
+  # Rules:
+  #   • workflow_dispatch (operator-explicit) → deploy ALL services.
+  #   • workflow_run on push to main → diff HEAD~1..HEAD; redeploy a service
+  #     iff `services/<name>/**` or `deploy/helm/<name>/**` changed.
+  #   • Workflow self-edits (only `.github/workflows/deploy-dev.yml` changed)
+  #     → skip ALL service redeploys. Chart and image are unchanged; reseting
+  #     every soak counter for nothing is the bug we just fixed. Operators
+  #     who need a forced redeploy after a workflow edit can dispatch
+  #     manually from the GitHub UI.
+  # ---------------------------------------------------------------------------
+  detect-changes:
+    name: detect changed services
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      market_data: ${{ steps.changes.outputs.market_data }}
+      execution_service: ${{ steps.changes.outputs.execution_service }}
+      decision_engine: ${{ steps.changes.outputs.decision_engine }}
+      ai_agent_service: ${{ steps.changes.outputs.ai_agent_service }}
+      journal_service: ${{ steps.changes.outputs.journal_service }}
+      calendar_service: ${{ steps.changes.outputs.calendar_service }}
+      user_config_service: ${{ steps.changes.outputs.user_config_service }}
+      notification_service: ${{ steps.changes.outputs.notification_service }}
+      projection_service: ${{ steps.changes.outputs.projection_service }}
+      api_gateway_bff: ${{ steps.changes.outputs.api_gateway_bff }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          # Need the parent commit so HEAD~1..HEAD diff resolves. Squash
+          # merges put one commit on main per PR — depth=2 is enough.
+          fetch-depth: 2
+      - name: Compute per-service changed flags
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          services=(
+            "market_data:services/market-data-service:deploy/helm/market-data-service"
+            "execution_service:services/execution-service:deploy/helm/execution-service"
+            "decision_engine:services/decision-engine:deploy/helm/decision-engine"
+            "ai_agent_service:services/ai-agent-service:deploy/helm/ai-agent-service"
+            "journal_service:services/journal-service:deploy/helm/journal-service"
+            "calendar_service:services/calendar-service:deploy/helm/calendar-service"
+            "user_config_service:services/user-config-service:deploy/helm/user-config-service"
+            "notification_service:services/notification-service:deploy/helm/notification-service"
+            "projection_service:services/projection-service:deploy/helm/projection-service"
+            "api_gateway_bff:services/api-gateway-bff:deploy/helm/api-gateway-bff"
+          )
+
+          # workflow_dispatch → deploy all (operator-explicit override).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "workflow_dispatch — flagging all services true"
+            for entry in "${services[@]}"; do
+              key="${entry%%:*}"
+              echo "${key}=true" >> "$GITHUB_OUTPUT"
+            done
+            exit 0
+          fi
+
+          # workflow_run → compare against parent.
+          changed=$(git diff --name-only HEAD~1 HEAD || true)
+          echo "Files changed in this push:"
+          echo "${changed}" | sed 's/^/  /'
+
+          # Workflow self-edit ONLY (no service code/chart touched) → skip
+          # all redeploys. Chart and image are unchanged; rolling everything
+          # would reset the soak counter for nothing.
+          non_workflow=$(echo "${changed}" | grep -vE '^\.github/workflows/deploy-dev\.yml$' || true)
+          if [ -z "${non_workflow}" ]; then
+            echo "Only deploy-dev.yml changed — skipping all service redeploys to preserve soak counters."
+            for entry in "${services[@]}"; do
+              key="${entry%%:*}"
+              echo "${key}=false" >> "$GITHUB_OUTPUT"
+            done
+            exit 0
+          fi
+
+          # Per-service path match.
+          for entry in "${services[@]}"; do
+            key="${entry%%:*}"
+            paths="${entry#*:}"
+            svc_path="${paths%%:*}"
+            chart_path="${paths##*:}"
+            if echo "${changed}" | grep -qE "^(${svc_path}|${chart_path})/"; then
+              echo "  → ${key}: deploy (touched ${svc_path} or ${chart_path})"
+              echo "${key}=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "  → ${key}: skip (untouched)"
+              echo "${key}=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
   deploy:
     name: deploy market-data-service to dev
-    # Gate on main.yml success when triggered by workflow_run. workflow_dispatch
-    # bypasses this check (operator confirmed by manual click).
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Gate on main.yml success when triggered by workflow_run + on detect-changes
+    # flagging this service. workflow_dispatch (operator-explicit) sets the
+    # flag to true unconditionally upstream.
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.market_data == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -156,7 +260,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-execution-service:
     name: deploy execution-service to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.execution_service == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -272,7 +379,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-decision-engine:
     name: deploy decision-engine to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.decision_engine == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -388,7 +498,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-ai-agent-service:
     name: deploy ai-agent-service to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.ai_agent_service == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -504,7 +617,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-journal-service:
     name: deploy journal-service to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.journal_service == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -606,7 +722,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-calendar-service:
     name: deploy calendar-service to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.calendar_service == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -712,7 +831,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-user-config-service:
     name: deploy user-config-service to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.user_config_service == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -822,7 +944,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-notification-service:
     name: deploy notification-service to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.notification_service == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -928,7 +1053,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-projection-service:
     name: deploy projection-service to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.projection_service == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
@@ -1038,7 +1166,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-api-gateway-bff:
     name: deploy api-gateway-bff to dev
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && needs.detect-changes.outputs.api_gateway_bff == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
