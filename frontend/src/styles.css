@@ -109,13 +109,18 @@
     border-radius: var(--r-card);
     padding: 1.5rem;
     transition:
-      border-color 200ms ease-out,
-      background 200ms ease-out,
-      transform 200ms ease-out;
+      border-color 220ms ease-out,
+      background 220ms ease-out,
+      transform 220ms ease-out,
+      box-shadow 220ms ease-out;
+    will-change: transform;
   }
 
   .glass-card:hover {
+    background: var(--bg-glass-hover);
     border-color: var(--border-bright);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 40px -16px rgba(59, 130, 246, 0.25);
   }
 
   .tile {
@@ -125,7 +130,27 @@
     border: 1px solid var(--border-subtle);
     border-radius: var(--r-tile);
     padding: 1.25rem;
+    transition:
+      border-color 220ms ease-out,
+      background 220ms ease-out,
+      transform 220ms ease-out,
+      box-shadow 220ms ease-out;
+    will-change: transform;
   }
+
+  .tile:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-bright);
+    transform: translateY(-2px) scale(1.01);
+    box-shadow: 0 12px 32px -12px rgba(59, 130, 246, 0.30);
+  }
+
+  /* Tile colored glow accent — inherits base hover, brightens its accent. */
+  .tile-blue:hover { box-shadow: 0 12px 32px -12px rgba(59, 130, 246, 0.45); }
+  .tile-cyan:hover { box-shadow: 0 12px 32px -12px rgba(6, 182, 212, 0.45); }
+  .tile-pink:hover { box-shadow: 0 12px 32px -12px rgba(236, 72, 153, 0.45); }
+  .tile-amber:hover { box-shadow: 0 12px 32px -12px rgba(252, 211, 77, 0.40); }
+  .tile-emerald:hover { box-shadow: 0 12px 32px -12px rgba(16, 185, 129, 0.40); }
 
   /* ------- Pills (filters, status badges, nav active) ------- */
   .pill {
@@ -149,6 +174,12 @@
   .pill:hover {
     background: var(--bg-glass-hover);
     border-color: var(--border-bright);
+    transform: translateY(-1px);
+    color: var(--fg-primary);
+  }
+
+  .pill:active {
+    transform: translateY(0);
   }
 
   .pill-ok {
@@ -199,6 +230,13 @@
   .btn:hover:not(:disabled) {
     background: var(--bg-glass-hover);
     border-color: var(--border-bright);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px -12px rgba(59, 130, 246, 0.35);
+  }
+
+  .btn:active:not(:disabled) {
+    transform: translateY(0);
+    transition-duration: 80ms;
   }
 
   .btn:disabled {
@@ -214,7 +252,8 @@
 
   .btn-primary:hover:not(:disabled) {
     background: linear-gradient(135deg, #2563eb 0%, #0891b2 100%);
-    box-shadow: 0 12px 40px -12px rgba(59, 130, 246, 0.75);
+    box-shadow: 0 12px 40px -10px rgba(59, 130, 246, 0.85), 0 0 24px -8px rgba(6, 182, 212, 0.5);
+    transform: translateY(-1px) scale(1.01);
   }
 
   /* ------- Inputs ------- */
@@ -319,4 +358,158 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
+}
+
+/* =============================================================================
+   Micro-interactions — apply via utility classes the components opt into. The
+   200-220ms ease-out timing matches uupm.cc; respects prefers-reduced-motion.
+   ========================================================================== */
+
+/* Nav link: muted slate → bright with accent underline that grows in. */
+.nav-link {
+  position: relative;
+  color: var(--fg-secondary);
+  padding: 0.45rem 0.95rem;
+  border-radius: var(--r-pill);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition:
+    color 200ms ease-out,
+    background 200ms ease-out,
+    transform 200ms ease-out;
+}
+
+.nav-link:hover {
+  color: var(--fg-primary);
+  background: var(--bg-glass-hover);
+}
+
+.nav-link:active {
+  transform: scale(0.97);
+  transition-duration: 80ms;
+}
+
+.nav-link.active {
+  color: var(--fg-primary);
+  background: var(--bg-glass-hover);
+  box-shadow: inset 0 0 0 1px var(--border-bright);
+}
+
+.nav-link.active::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: -6px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+  border-radius: 2px;
+  opacity: 0.85;
+}
+
+/* Anchor / inline link — subtle color shift to cyan on hover. */
+.text-link {
+  color: var(--accent-blue);
+  text-decoration: none;
+  transition: color 180ms ease-out, text-shadow 180ms ease-out;
+}
+
+.text-link:hover {
+  color: var(--accent-cyan);
+  text-shadow: 0 0 12px rgba(6, 182, 212, 0.45);
+}
+
+/* Table rows — gentle background lift on hover, monospaced numerics. */
+.row {
+  transition: background 200ms ease-out, transform 200ms ease-out;
+}
+
+.row:hover {
+  background: var(--bg-glass-hover);
+  cursor: pointer;
+}
+
+.row td {
+  transition: color 200ms ease-out;
+}
+
+.row:hover td {
+  color: var(--fg-primary);
+}
+
+/* Icon container inside tile — subtle rotate-on-hover for delight. */
+.tile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  background: rgba(59, 130, 246, 0.10);
+  color: var(--accent-blue);
+  transition:
+    transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    background 220ms ease-out,
+    color 220ms ease-out;
+}
+
+.tile:hover .tile-icon {
+  transform: rotate(-6deg) scale(1.08);
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.tile-icon-cyan { background: rgba(6, 182, 212, 0.10); color: var(--accent-cyan); }
+.tile:hover .tile-icon-cyan { background: rgba(6, 182, 212, 0.18); }
+.tile-icon-pink { background: rgba(236, 72, 153, 0.10); color: var(--accent-pink); }
+.tile:hover .tile-icon-pink { background: rgba(236, 72, 153, 0.18); }
+.tile-icon-amber { background: rgba(252, 211, 77, 0.12); color: var(--accent-amber); }
+.tile:hover .tile-icon-amber { background: rgba(252, 211, 77, 0.20); }
+.tile-icon-emerald { background: rgba(16, 185, 129, 0.10); color: var(--accent-emerald); }
+.tile:hover .tile-icon-emerald { background: rgba(16, 185, 129, 0.18); }
+
+/* Status dot — pulsing ring when "live". */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-emerald);
+  position: relative;
+}
+
+.status-dot.live::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-emerald);
+  opacity: 0.6;
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Fade-in on initial render — useful on cards/tiles. */
+.fade-in {
+  animation: fade-in 380ms ease-out both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Accessibility: honor reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,0 +1,40 @@
+# =============================================================================
+# Dev-only Cloudflare Tunnel that gives the BFF a public HTTPS URL without
+# owning a domain or provisioning a cert. Resolves the mixed-content block
+# when the SWA-hosted dashboard (https) calls the BFF (http).
+#
+# trycloudflare URLs are anonymous and rotate per tunnel restart. Operator
+# captures the URL from the pod logs, drops it into the Angular environment.
+#
+# Phase 7+ replaces this with a proper public hostname + Let's Encrypt or
+# Azure Application Gateway with managed TLS.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared-bff
+  namespace: api-gateway-bff
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflared-bff
+  template:
+    metadata:
+      labels:
+        app: cloudflared-bff
+    spec:
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args:
+            - tunnel
+            - --no-autoupdate
+            - --url
+            - http://api-gateway-bff.api-gateway-bff.svc.cluster.local:8090
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi

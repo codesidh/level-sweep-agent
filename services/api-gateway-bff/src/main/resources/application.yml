@@ -59,6 +59,11 @@ management:
 levelsweep:
   tenant:
     bootstrap-id: OWNER
+  cors:
+    # CSV of origins allowed to call /api/**. SWA dashboard URL goes here in
+    # dev; Phase 10 swaps for the managed custom domain. `*` allows any (dev
+    # convenience only — Phase 10 locks it down).
+    allowed-origins: "${LEVELSWEEP_CORS_ALLOWED_ORIGINS:*}"
   feature-flags:
     # Phase B JWT validation — flips on AFTER legal counsel completes RIA /
     # broker-dealer review (CLAUDE.md guardrail #1). Default OFF.
