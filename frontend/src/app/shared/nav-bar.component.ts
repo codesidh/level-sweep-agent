@@ -32,9 +32,9 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         >
           @for (link of links; track link.path) {
             <a
-              class="rounded-pill px-3.5 py-1.5 text-sm font-medium text-fg-secondary transition hover:text-fg-primary"
+              class="nav-link"
               [routerLink]="link.path"
-              routerLinkActive="bg-bg-glass-hover text-fg-primary"
+              routerLinkActive="active"
               [routerLinkActiveOptions]="{ exact: link.path === '/' }"
             >
               {{ link.label }}
@@ -62,9 +62,9 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
       >
         @for (link of links; track link.path) {
           <a
-            class="whitespace-nowrap rounded-pill px-3.5 py-1.5 text-sm font-medium text-fg-secondary transition hover:text-fg-primary"
+            class="nav-link whitespace-nowrap"
             [routerLink]="link.path"
-            routerLinkActive="bg-bg-glass-hover text-fg-primary"
+            routerLinkActive="active"
             [routerLinkActiveOptions]="{ exact: link.path === '/' }"
           >
             {{ link.label }}
