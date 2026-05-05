@@ -76,7 +76,6 @@ jobs:
           # The Angular bundle is already built on the runner; the action just
           # uploads the static contents. skip_app_build keeps the SWA Oryx
           # builder out of the loop.
-          app_location: frontend
+          app_location: "frontend/dist/levelsweep-dashboard/browser"
           api_location: ""
-          output_location: dist/levelsweep-dashboard/browser
           skip_app_build: true
