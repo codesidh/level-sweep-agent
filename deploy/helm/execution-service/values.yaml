@@ -60,7 +60,7 @@ env:
   # Kafka is not deployed in Phase 3 (Phase 6 introduces the Strimzi cluster).
   # The trade-proposed-in incoming channel swaps to in-memory under %prod, so
   # a bogus bootstrap is safe in dev.
-  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
   MONGO_URL: "mongodb://mongo.mongo.svc.cluster.local:27017"
   MONGO_DB: "level_sweep"
   MSSQL_URL: "jdbc:sqlserver://mssql:1433;databaseName=level_sweep;encrypt=false"
