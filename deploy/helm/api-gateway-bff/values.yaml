@@ -72,8 +72,10 @@ env:
   # deploy of one doesn't block the others).
   JOURNAL_SERVICE_URL: "http://journal-service.journal-service.svc.cluster.local:8085"
   USER_CONFIG_SERVICE_URL: "http://user-config-service.user-config-service.svc.cluster.local:8086"
-  PROJECTION_SERVICE_URL: "http://projection-service.projection-service.svc.cluster.local:8087"
+  PROJECTION_SERVICE_URL: "http://projection-service.projection-service.svc.cluster.local:8089"
   CALENDAR_SERVICE_URL: "http://calendar-service.calendar-service.svc.cluster.local:8088"
+  # Phase 5 S6 — Conversational Assistant via the AI Agent Service.
+  AI_AGENT_SERVICE_URL: "http://ai-agent-service.ai-agent.svc.cluster.local:8084"
   # OTel service.name — App Insights agent (loaded as -javaagent in
   # Dockerfile.jvm) reads this and stamps it on every trace/log/metric.
   OTEL_SERVICE_NAME: "api-gateway-bff"

@@ -132,7 +132,7 @@ podDisruptionBudget:
   minAvailable: 1
 
 networkPolicy:
-  enabled: true
+  enabled: false
 
 serviceAccount:
   # Auto-derive from chart fullname when name is empty.
