@@ -1,7 +1,6 @@
 package com.levelsweep.execution.messaging;
 
 import com.levelsweep.shared.domain.trade.TradeFilled;
-import io.quarkus.arc.profile.UnlessBuildProfile;
 import io.smallrye.reactive.messaging.MutinyEmitter;
 import io.smallrye.reactive.messaging.kafka.Record;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -26,13 +25,9 @@ import org.slf4j.LoggerFactory;
  * preserves per-tenant order across the partition and lets the broker scale
  * horizontally as the multi-tenant onboarding flag flips on in Phase B.
  *
- * <p>Disabled in the {@code prod} profile during Phase 3 — the dev cluster
- * does not run Kafka (Strimzi lands in Phase 6 per architecture-spec §12).
- * Without the gate, Quarkus eagerly constructs the Kafka producer at boot
- * and crashes on DNS resolution of the placeholder {@code kafka:9092}. Same
- * pattern as decision-engine's {@code TradeProposedKafkaPublisher}. The gate
- * becomes a no-op in Phase 6 when Kafka is real; remove the
- * {@link UnlessBuildProfile} at that point.
+ * <p>Phase 7 enabled this in production: Strimzi/Kafka now runs in the dev
+ * cluster (`infra/k8s-dev/kafka.yaml`). The previous `@UnlessBuildProfile("prod")`
+ * gate has been removed.
  *
  * <p>Emit pattern: fire-and-forget. {@code MutinyEmitter#send} returns a
  * {@code Uni<Void>} which we subscribe to with a no-op success handler and a
@@ -40,7 +35,6 @@ import org.slf4j.LoggerFactory;
  * thread on Kafka acks while still surfacing publish failures via the log.
  */
 @ApplicationScoped
-@UnlessBuildProfile("prod")
 public class TradeFilledKafkaPublisher {
 
     private static final Logger LOG = LoggerFactory.getLogger(TradeFilledKafkaPublisher.class);

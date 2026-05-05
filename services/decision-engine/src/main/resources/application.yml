@@ -225,27 +225,9 @@ tenant:
     kafka:
       devservices:
         enabled: false
-  mp:
-    messaging:
-      incoming:
-        bars-1m:
-          connector: smallrye-in-memory
-        bars-2m:
-          connector: smallrye-in-memory
-        bars-15m:
-          connector: smallrye-in-memory
-        bars-daily:
-          connector: smallrye-in-memory
-        indicators-2m:
-          connector: smallrye-in-memory
-      outgoing:
-        # Belt-and-braces: TradeProposedKafkaPublisher is @UnlessBuildProfile("prod")
-        # so the bean (and the @Channel injection point) is absent in %prod, but
-        # configuring the channel for the in-memory connector keeps the channel
-        # graph valid for any future producer that drops the profile gate.
-        # Phase 6 Strimzi rollout switches this back to smallrye-kafka.
-        trade-proposed-out:
-          connector: smallrye-in-memory
+  # Phase 7 enabled Kafka in prod: Strimzi cluster runs in the dev cluster
+  # (`infra/k8s-dev/kafka.yaml`). The default smallrye-kafka connectors above
+  # are now active across all profiles; no override needed here.
 
 # Test profile — Quarkus dev-services would otherwise try to spin up Mongo,
 # MS SQL, and Kafka containers in CI. Disable them here so unit tests run
