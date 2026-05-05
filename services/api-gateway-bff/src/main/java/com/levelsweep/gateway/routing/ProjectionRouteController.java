@@ -48,7 +48,7 @@ public class ProjectionRouteController {
         LOG.debug("proxying GET /api/projection/{}/last", tenantId);
         try {
             String body = client.get()
-                    .uri("/projection/" + tenantId + "/last")
+                    .uri("/projection/last/" + tenantId)
                     .header(BypassAuthFilter.TENANT_HEADER, tenantId)
                     .retrieve()
                     .body(String.class);
@@ -64,7 +64,7 @@ public class ProjectionRouteController {
         LOG.info("proxying POST /api/projection/{}/run", tenantId);
         try {
             String body = client.post()
-                    .uri("/projection/" + tenantId + "/run")
+                    .uri("/projection/run")
                     .header(BypassAuthFilter.TENANT_HEADER, tenantId)
                     .retrieve()
                     .body(String.class);

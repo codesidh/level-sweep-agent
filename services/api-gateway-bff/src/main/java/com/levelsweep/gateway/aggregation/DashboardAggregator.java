@@ -87,14 +87,14 @@ public class DashboardAggregator {
 
         CompletableFuture<Object> journalF = supply("journal", () -> journalClient
                 .get()
-                .uri("/audit/" + tenantId + "?limit=10")
+                .uri("/journal/" + tenantId + "?limit=10")
                 .header(BypassAuthFilter.TENANT_HEADER, tenantId)
                 .retrieve()
                 .body(String.class));
 
         CompletableFuture<Object> projectionF = supply("projection", () -> projectionClient
                 .get()
-                .uri("/projection/" + tenantId + "/last")
+                .uri("/projection/last/" + tenantId)
                 .header(BypassAuthFilter.TENANT_HEADER, tenantId)
                 .retrieve()
                 .body(String.class));

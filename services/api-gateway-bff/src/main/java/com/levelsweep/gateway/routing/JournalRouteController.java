@@ -54,7 +54,7 @@ public class JournalRouteController {
             @RequestParam(value = "from", required = false) String from,
             @RequestParam(value = "to", required = false) String to,
             @RequestParam(value = "type", required = false) String type) {
-        UriComponentsBuilder uri = UriComponentsBuilder.fromPath("/audit/" + tenantId);
+        UriComponentsBuilder uri = UriComponentsBuilder.fromPath("/journal/" + tenantId);
         if (from != null && !from.isBlank()) {
             uri.queryParam("from", from);
         }
