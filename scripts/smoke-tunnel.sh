@@ -102,9 +102,10 @@ probe GET  "/api/dashboard/${TENANT}/summary"  "200"  "fan-out: journal+config+p
 echo
 echo "${CYAN}── Calendar service ────────────────────────────────────────────────${RESET}"
 probe GET  "/api/calendar/today"  "200"  "today's market session info"
-# These two are referenced by the frontend but BFF doesn't proxy them yet.
-probe GET  "/api/calendar/blackout-dates"  "200"  "blackout dates list" "" "404,405"
-probe GET  "/api/calendar/2026-05-05"  "200"  "specific date info" "" "404,405"
+# calendar-service requires from/to ISO-8601 dates on /blackout-dates;
+# we send a 12-month window like the dashboard's CalendarPage does.
+probe GET  "/api/calendar/blackout-dates?from=2026-05-05&to=2027-05-05"  "200"  "blackout dates list (12mo window)"
+probe GET  "/api/calendar/2026-05-05"  "200"  "specific date info"
 
 echo
 echo "${CYAN}── Journal / audit aggregator ─────────────────────────────────────${RESET}"
