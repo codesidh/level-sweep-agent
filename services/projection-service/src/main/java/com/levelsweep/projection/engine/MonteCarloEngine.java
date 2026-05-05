@@ -4,9 +4,8 @@ import com.levelsweep.projection.domain.ProjectionRequest;
 import com.levelsweep.projection.domain.ProjectionResult;
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.Random;
+import java.util.SplittableRandom;
 import java.util.random.RandomGenerator;
-import java.util.random.RandomGeneratorFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -38,6 +37,16 @@ import org.springframework.stereotype.Component;
  * SplittableRandom-based parallel streams because their internal split
  * sequence depends on JDK-internal state that can vary across JVM versions.
  *
+ * <p>We construct {@link SplittableRandom} directly rather than going through
+ * {@code RandomGeneratorFactory.of("L64X128MixRandom")} because some stripped
+ * JREs (notably {@code eclipse-temurin:21-jre-alpine}, the base image these
+ * services run on) ship without the LXM algorithm service registrations even
+ * though the classes themselves are in {@code java.base} — the factory call
+ * throws {@code IllegalArgumentException: "No implementation of the random
+ * number generator algorithm available"}. SplittableRandom has a public
+ * seed-taking constructor that sidesteps the SPI lookup entirely while still
+ * giving us a deterministic, seedable RandomGenerator.
+ *
  * <p>The engine is a Spring {@link Component} purely for DI ergonomics; its
  * core method is a pure function. Tests construct it via {@code new}.
  */
@@ -55,7 +64,7 @@ public class MonteCarloEngine {
      * seed) before calling this method.
      *
      * @param request input parameters (already validated by Bean Validation)
-     * @param seed    explicit seed for {@link Random}; identical seeds → identical output
+     * @param seed    explicit seed for {@link SplittableRandom}; identical seeds → identical output
      * @return percentile + mean + ruin probability summary
      */
     public ProjectionResult run(ProjectionRequest request, long seed) {
@@ -76,11 +85,10 @@ public class MonteCarloEngine {
         double lossMultiplier = 1.0 - positionFrac * moveMagnitude;
         double ruinFloor = startingEquity * RUIN_DRAWDOWN_FLOOR;
 
-        // L'Ecuyer's LXM is JDK 17+, deterministic across JDK 21+ patches and
-        // platforms, and faster than Random — preferred for Monte Carlo.
-        // Fall back to Random for older JDKs (none in scope here, JDK 21 only).
-        RandomGenerator rng =
-                RandomGeneratorFactory.<RandomGenerator>of("L64X128MixRandom").create(seed);
+        // SplittableRandom: seeded constructor, deterministic across JDK
+        // patches, and present in java.base without service-loader lookup.
+        // See class header for why we don't use RandomGeneratorFactory here.
+        RandomGenerator rng = new SplittableRandom(seed);
 
         double[] finalEquities = new double[simulations];
         int ruinCount = 0;
