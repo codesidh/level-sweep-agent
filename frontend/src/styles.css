@@ -1,0 +1,322 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — primitive layer. Mirrors uupm.cc visual language: deep navy
+   gradients, glass surfaces, gradient hero text, ambient blue/cyan glows.
+   Tailwind's theme.extend (tailwind.config.js) reads these via CSS vars so
+   utility classes like bg-bg-base, border-subtle, text-fg-muted resolve. */
+:root {
+  /* Backgrounds — deep navy gradient */
+  --bg-base: #020617;          /* slate-950 */
+  --bg-elevated: #0f172a;      /* slate-900 */
+  --bg-glass: rgba(255, 255, 255, 0.04);
+  --bg-glass-hover: rgba(255, 255, 255, 0.08);
+
+  /* Text */
+  --fg-primary: #f8fafc;       /* slate-50 */
+  --fg-secondary: #cbd5e1;     /* slate-300 */
+  --fg-muted: #64748b;         /* slate-500 */
+
+  /* Accents */
+  --accent-blue: #3b82f6;
+  --accent-cyan: #06b6d4;
+  --accent-pink: #ec4899;
+  --accent-amber: #fcd34d;
+  --accent-emerald: #10b981;
+  --accent-red: #f87171;
+
+  /* Borders */
+  --border-subtle: rgba(148, 163, 184, 0.10);
+  --border-bright: rgba(148, 163, 184, 0.20);
+
+  /* Glow */
+  --glow-blue: 0 0 80px -20px rgba(59, 130, 246, 0.5);
+  --glow-cyan: 0 0 60px -20px rgba(6, 182, 212, 0.4);
+
+  /* Radius */
+  --r-pill: 9999px;
+  --r-card: 1.5rem;
+  --r-tile: 1rem;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    color: var(--fg-primary);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  body {
+    background-color: var(--bg-base);
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(59, 130, 246, 0.18), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 100% 30%, rgba(236, 72, 153, 0.10), transparent 70%),
+      radial-gradient(ellipse 60% 40% at 0% 60%, rgba(6, 182, 212, 0.10), transparent 70%),
+      linear-gradient(180deg, #020617, #0f172a);
+    background-attachment: fixed;
+    background-size: 100% 100%;
+    min-height: 100vh;
+  }
+
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: rgba(59, 130, 246, 0.4);
+    color: var(--fg-primary);
+  }
+
+  /* Custom scrollbar — keeps the dark glass aesthetic on overflow areas. */
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.15);
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.30);
+  }
+}
+
+@layer components {
+  /* ------- Glass surfaces ------- */
+  .glass {
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .glass-card {
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-card);
+    padding: 1.5rem;
+    transition:
+      border-color 200ms ease-out,
+      background 200ms ease-out,
+      transform 200ms ease-out;
+  }
+
+  .glass-card:hover {
+    border-color: var(--border-bright);
+  }
+
+  .tile {
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-tile);
+    padding: 1.25rem;
+  }
+
+  /* ------- Pills (filters, status badges, nav active) ------- */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: var(--r-pill);
+    padding: 0.35rem 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-subtle);
+    color: var(--fg-secondary);
+    transition: all 200ms ease-out;
+  }
+
+  .pill:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-bright);
+  }
+
+  .pill-ok {
+    color: var(--accent-emerald);
+    border-color: rgba(16, 185, 129, 0.30);
+    background: rgba(16, 185, 129, 0.08);
+  }
+
+  .pill-warn {
+    color: var(--accent-amber);
+    border-color: rgba(252, 211, 77, 0.30);
+    background: rgba(252, 211, 77, 0.08);
+  }
+
+  .pill-bad {
+    color: var(--accent-red);
+    border-color: rgba(248, 113, 113, 0.30);
+    background: rgba(248, 113, 113, 0.08);
+  }
+
+  /* ------- Gradient hero text ------- */
+  .gradient-text {
+    background: linear-gradient(135deg, #60a5fa 0%, #c084fc 40%, #f472b6 70%, #fbbf24 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* ------- Buttons ------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 1rem;
+    padding: 0.6rem 1.1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--fg-primary);
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-subtle);
+    transition: all 200ms ease-out;
+  }
+
+  .btn:hover:not(:disabled) {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-bright);
+  }
+
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+    border: 1px solid rgba(96, 165, 250, 0.4);
+    box-shadow: 0 8px 32px -12px rgba(59, 130, 246, 0.6);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2563eb 0%, #0891b2 100%);
+    box-shadow: 0 12px 40px -12px rgba(59, 130, 246, 0.75);
+  }
+
+  /* ------- Inputs ------- */
+  .input {
+    width: 100%;
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-subtle);
+    border-radius: 0.75rem;
+    padding: 0.55rem 0.85rem;
+    color: var(--fg-primary);
+    font-size: 0.875rem;
+    transition: border-color 200ms ease-out;
+  }
+
+  .input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+
+  .input::placeholder {
+    color: var(--fg-muted);
+  }
+
+  /* ------- Card heading ------- */
+  .card-header {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    margin-bottom: 0.75rem;
+  }
+
+  /* ------- Numbers ------- */
+  .num {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-primary);
+  }
+
+  /* ------- Skeleton loader ------- */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgba(148, 163, 184, 0.05) 0%,
+      rgba(148, 163, 184, 0.12) 50%,
+      rgba(148, 163, 184, 0.05) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+    border-radius: 0.5rem;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ------- Ambient glow halo (used behind hero) ------- */
+  .glow-halo {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+  }
+
+  .glow-halo::before,
+  .glow-halo::after {
+    content: '';
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(64px);
+    opacity: 0.5;
+  }
+
+  .glow-halo::before {
+    width: 60rem;
+    height: 60rem;
+    top: -20rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, transparent 60%);
+  }
+
+  .glow-halo::after {
+    width: 40rem;
+    height: 40rem;
+    bottom: -15rem;
+    right: -10rem;
+    background: radial-gradient(circle, rgba(236, 72, 153, 0.18) 0%, transparent 60%);
+  }
+}
+
+/* Utility: text gradient subdued — muted variant for sub-headings. */
+.gradient-text-cyan {
+  background: linear-gradient(135deg, #60a5fa 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
