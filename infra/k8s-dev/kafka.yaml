@@ -170,6 +170,22 @@ spec:
     retention.ms: "31536000000"
     cleanup.policy: delete
 ---
+# tenant.commands — decision-engine TradeProposed → execution-service
+# (architecture-spec §12.1 row 5). Keyed by tenant_id for partition stickiness.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: tenant.commands
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "31536000000"
+    cleanup.policy: delete
+---
 # Bar topics (architecture-spec §12.1) — market-data-service publishes
 # completed bars per timeframe; Phase 7+ Decision Engine subscribes for
 # multi-timeframe signal evaluation.
