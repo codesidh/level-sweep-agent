@@ -159,9 +159,6 @@ export class CalendarPage implements OnInit {
 function errMsg(err: unknown): string {
   if (err && typeof err === 'object' && 'status' in err) {
     const e = err as { status: number; message?: string };
-    if (e.status === 404) {
-      return 'Calendar route /api/calendar/blackout-dates not yet exposed by BFF — TODO(phase 7).';
-    }
     return `HTTP ${e.status}${e.message ? ': ' + e.message : ''}`;
   }
   return err instanceof Error ? err.message : String(err);
