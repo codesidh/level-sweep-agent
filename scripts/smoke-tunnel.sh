@@ -121,9 +121,13 @@ echo
 echo "${CYAN}── Projection service ──────────────────────────────────────────────${RESET}"
 # 404 is expected when no projection has been run for this tenant yet.
 probe GET  "/api/projection/${TENANT}/last"  "200"  "latest cached run" "" "404"
-# The POST /run path was 415 until PR #138 fixed BFF body forwarding.
+# The POST /run path was 415 until PR #138 fixed BFF body forwarding,
+# and 500 until PR #140 swapped the engine RNG to SplittableRandom (the
+# stripped JRE service-loader missed L64X128MixRandom). Payload shape
+# mirrors the dashboard's default form values
+# (frontend/src/app/pages/projections/projections.page.ts:145).
 probe POST "/api/projection/${TENANT}/run"  "200"  "Monte Carlo recompute" \
-  '{"tenantId":"OWNER","accountSize":100000.0,"maxRiskPerTradeBps":50,"winRate":0.55,"avgWinR":2.0,"avgLossR":1.0,"tradesPerDay":3,"sessions":20,"simulations":1000}'
+  '{"tenantId":"OWNER","startingEquity":25000.0,"winRatePct":55,"lossPct":2.0,"sessionsPerWeek":5,"horizonWeeks":12,"positionSizePct":1.5,"simulations":1000}'
 
 echo
 echo "${CYAN}── AI Agent — Conversational Assistant ─────────────────────────────${RESET}"
