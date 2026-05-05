@@ -204,6 +204,12 @@ tenant:
     datasource:
       health:
         enabled: false
+      # Defense in depth — Quarkus dev-services are dev-mode-only by design,
+      # but explicitly disabling them under %prod prevents an embedded
+      # Postgres / MS SQL / Mongo / Kafka container from ever launching in
+      # the AKS pod (which has no docker daemon). Phase 7 deploy artifacts.
+      devservices:
+        enabled: false
     # Flyway off in %prod for the same reason as market-data-service — Phase 2
     # dev does not deploy MS SQL, so migrate-at-start would block boot trying
     # to reach a nonexistent jdbc URL. Repository writes already catch SQL
@@ -213,6 +219,11 @@ tenant:
       enabled: false
     mongodb:
       health:
+        enabled: false
+      devservices:
+        enabled: false
+    kafka:
+      devservices:
         enabled: false
   mp:
     messaging:

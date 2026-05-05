@@ -219,6 +219,9 @@ jobs:
       - name: helm lint (execution-service)
         run: helm lint deploy/helm/execution-service
 
+      - name: helm lint (decision-engine)
+        run: helm lint deploy/helm/decision-engine
+
       - name: helm template (market-data-service smoke render)
         # Render with the same `--set` keys deploy-dev.yml passes, so a chart
         # bug (missing required value, bad function call) surfaces here too.
@@ -260,6 +263,27 @@ jobs:
           for kind in Deployment Service ServiceAccount SecretProviderClass NetworkPolicy; do
             if ! grep -q "^kind: ${kind}$" /tmp/rendered-exec.yaml; then
               echo "::error::execution-service helm template did not produce a ${kind} resource"
+              exit 1
+            fi
+          done
+
+      - name: helm template (decision-engine smoke render)
+        # Same smoke-render pattern as the other charts. PDB is conditional
+        # on strategy=RollingUpdate, so the default strategy=Recreate path
+        # intentionally skips it.
+        run: |
+          helm template decision-engine deploy/helm/decision-engine \
+            --namespace decision-engine \
+            --set image.repository=acr.example.azurecr.io/decision-engine \
+            --set image.tag=ci-test \
+            --set workloadIdentity.clientId=00000000-0000-0000-0000-000000000000 \
+            --set keyVault.tenantId=11111111-1111-1111-1111-111111111111 \
+            --set keyVault.name=kv-example \
+            --set keyVault.vaultUri=https://kv-example.vault.azure.net/ \
+            > /tmp/rendered-decision.yaml
+          for kind in Deployment Service ServiceAccount SecretProviderClass NetworkPolicy; do
+            if ! grep -q "^kind: ${kind}$" /tmp/rendered-decision.yaml; then
+              echo "::error::decision-engine helm template did not produce a ${kind} resource"
               exit 1
             fi
           done

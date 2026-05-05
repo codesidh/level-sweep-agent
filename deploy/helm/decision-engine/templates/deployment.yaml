@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "decision-engine.fullname" . }}
+  labels:
+    {{- include "decision-engine.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "decision-engine.selectorLabels" . | nindent 6 }}
+  strategy:
+    # Phase 7 dev: 2-node, four hot-path service pods. RollingUpdate would
+    # create a second decision-engine pod (maxSurge=1) that competes with the
+    # existing market-data / execution / ai-agent pods for the same node and
+    # stays Pending until Helm's `--wait` times out. Recreate kills the old
+    # pod first → ~10s downtime → no resource contention. The saga's
+    # in-process FSM state also rules out two-writer rollouts until Phase 7+
+    # externalizes the state to MS SQL / Mongo with optimistic locking.
+    type: {{ .Values.deployment.strategy | default "Recreate" }}
+    {{- if eq (.Values.deployment.strategy | default "Recreate") "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.deployment.maxSurge | default 1 }}
+      maxUnavailable: {{ .Values.deployment.maxUnavailable | default 0 }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "decision-engine.selectorLabels" . | nindent 8 }}
+        {{- if .Values.workloadIdentity.enabled }}
+        # Required for the Azure Workload Identity webhook to inject the
+        # projected SA token + AZURE_* env into the pod.
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "decision-engine.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: decision-engine
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- if .Values.keyVault.enabled }}
+            {{- range .Values.keyVault.objects }}
+            {{- if .env }}
+            - name: {{ .env }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-%s" (include "decision-engine.fullname" $) .name | trunc 63 | trimSuffix "-" }}
+                  key: {{ .name }}
+                  optional: {{ default false .optional }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+          volumeMounts:
+            # Quarkus needs a writable scratch dir; readOnlyRootFilesystem
+            # blocks /tmp by default.
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.keyVault.enabled }}
+            - name: kv-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.readiness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 100
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.keyVault.enabled }}
+        - name: kv-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "decision-engine.fullname" . }}-kv
+        {{- end }}
