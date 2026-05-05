@@ -1,10 +1,16 @@
 package com.levelsweep.gateway.config;
 
+import java.util.Arrays;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * Spring Security wiring — Phase A.
@@ -35,11 +41,41 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration
 public class SecurityConfig {
 
+    @Value("${levelsweep.cors.allowed-origins:}")
+    private String allowedOriginsCsv;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a.anyRequest().permitAll());
         return http.build();
+    }
+
+    /**
+     * CORS for the SPA tier. Origins come from {@code levelsweep.cors.allowed-origins}
+     * (CSV) — the Helm chart sets it to the SWA hostname in dev. Phase 10 swaps in
+     * a managed custom domain.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration cfg = new CorsConfiguration();
+        List<String> origins = allowedOriginsCsv == null || allowedOriginsCsv.isBlank()
+                ? List.of("*")
+                : Arrays.stream(allowedOriginsCsv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        if (origins.contains("*")) {
+            cfg.addAllowedOriginPattern("*");
+        } else {
+            origins.forEach(cfg::addAllowedOrigin);
+            cfg.setAllowCredentials(true);
+        }
+        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        cfg.setAllowedHeaders(List.of("*"));
+        cfg.setExposedHeaders(List.of("X-Total-Count", "X-Tenant-Id"));
+        cfg.setMaxAge(3600L);
+        UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+        src.registerCorsConfiguration("/api/**", cfg);
+        return src;
     }
 }
