@@ -4,10 +4,12 @@ import com.levelsweep.gateway.auth.BypassAuthFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
@@ -59,16 +61,18 @@ public class ProjectionRouteController {
         }
     }
 
-    @PostMapping("/{tenantId}/run")
-    public ResponseEntity<?> run(@PathVariable("tenantId") String tenantId) {
+    @PostMapping(value = "/{tenantId}/run", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> run(@PathVariable("tenantId") String tenantId, @RequestBody String body) {
         LOG.info("proxying POST /api/projection/{}/run", tenantId);
         try {
-            String body = client.post()
+            String resp = client.post()
                     .uri("/projection/run")
                     .header(BypassAuthFilter.TENANT_HEADER, tenantId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
                     .retrieve()
                     .body(String.class);
-            return ResponseEntity.ok().body(body);
+            return ResponseEntity.ok().body(resp);
         } catch (RestClientResponseException e) {
             LOG.warn("projection-service /run returned {} for tenant={}", e.getStatusCode(), tenantId);
             return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
