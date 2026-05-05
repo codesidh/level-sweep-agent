@@ -63,7 +63,10 @@ public class SecurityConfig {
         CorsConfiguration cfg = new CorsConfiguration();
         List<String> origins = allowedOriginsCsv == null || allowedOriginsCsv.isBlank()
                 ? List.of("*")
-                : Arrays.stream(allowedOriginsCsv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+                : Arrays.stream(allowedOriginsCsv.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toList();
         if (origins.contains("*")) {
             cfg.addAllowedOriginPattern("*");
         } else {
