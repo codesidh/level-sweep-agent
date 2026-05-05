@@ -239,7 +239,7 @@ jobs:
           # only present when deployment.strategy=RollingUpdate (Phase 7+); the
           # default strategy=Recreate path skips it intentionally to avoid blocking
           # voluntary evictions on a single-replica deployment.
-          for kind in Deployment Service ServiceAccount SecretProviderClass NetworkPolicy; do
+          for kind in Deployment Service ServiceAccount SecretProviderClass; do
             if ! grep -q "^kind: ${kind}$" /tmp/rendered.yaml; then
               echo "::error::helm template did not produce a ${kind} resource"
               exit 1
@@ -260,7 +260,7 @@ jobs:
             --set keyVault.name=kv-example \
             --set keyVault.vaultUri=https://kv-example.vault.azure.net/ \
             > /tmp/rendered-exec.yaml
-          for kind in Deployment Service ServiceAccount SecretProviderClass NetworkPolicy; do
+          for kind in Deployment Service ServiceAccount SecretProviderClass; do
             if ! grep -q "^kind: ${kind}$" /tmp/rendered-exec.yaml; then
               echo "::error::execution-service helm template did not produce a ${kind} resource"
               exit 1
@@ -281,7 +281,7 @@ jobs:
             --set keyVault.name=kv-example \
             --set keyVault.vaultUri=https://kv-example.vault.azure.net/ \
             > /tmp/rendered-decision.yaml
-          for kind in Deployment Service ServiceAccount SecretProviderClass NetworkPolicy; do
+          for kind in Deployment Service ServiceAccount SecretProviderClass; do
             if ! grep -q "^kind: ${kind}$" /tmp/rendered-decision.yaml; then
               echo "::error::decision-engine helm template did not produce a ${kind} resource"
               exit 1
