@@ -20,7 +20,7 @@
 # =============================================================================
 set -u
 
-BASE="${BASE:-https://dolls-employ-envelope-magnificent.trycloudflare.com}"
+BASE="${BASE:-https://void-cardiff-recipe-momentum.trycloudflare.com}"
 TENANT="${TENANT:-OWNER}"
 
 # Counters.
