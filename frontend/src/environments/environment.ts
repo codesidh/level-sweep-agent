@@ -10,7 +10,7 @@
 // constant updated, then the dashboard rebuilt + redeployed.
 export const environment = {
   production: true,
-  apiBase: 'https://dolls-employ-envelope-magnificent.trycloudflare.com/api',
+  apiBase: 'https://void-cardiff-recipe-momentum.trycloudflare.com/api',
   // Phase A operates as a single OWNER tenant (CLAUDE.md guardrail #1). Phase
   // 10 will pull this from the Auth0 JWT instead of hard-coding it.
   defaultTenantId: 'OWNER',
